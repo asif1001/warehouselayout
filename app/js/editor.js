@@ -71,7 +71,9 @@ let ctx;
 let props;
 let toolHint;
 
-// 2D camera: world center (cx, cy) in metres + zoom in px/m
+// 2D camera: world center (cx, cy) in metres + zoom in px/m. These values are
+// only the fallback for the very first frame — initEditor() frames the layout
+// with centerView() so the plan opens centered and fitted.
 const view = { cx: 61, cy: 27, zoom: 10 };
 
 // World-space bounds of everything the last 2D draw painted. Recorded during
@@ -3300,6 +3302,9 @@ export function initEditor(layout) {
   renderBinTypes();
   updateBgInfo();
   resize();
+  // Open on a framed plan: resize() has painted once, so the layout bounds are
+  // known and the first thing the user sees is the map centered and fitted.
+  centerView();
   setTool('select');
   updateHistoryButtons();
 }

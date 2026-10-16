@@ -121,8 +121,9 @@ python -m http.server 8000      # then open http://localhost:8000
 - **Canvas:** drag to move a selected object, scroll to zoom. Pan the plan by
   dragging empty space (Select tool), right- or middle-dragging, holding `Space`
   and dragging, or with the **arrow keys** (`Shift`+arrow for bigger steps).
-  Get lost? **Center map** in the toolbar (or `Home`) recenters on the layout
-  and zooms to fit it.
+  The editor **opens centered on the layout, zoomed to fit**, so a fresh start
+  never lands off the plan. Get lost? **Center map** in the toolbar (or `Home`)
+  recenters on the layout and zooms to fit it.
 - **2D Plan / 3D Preview** toggle in the toolbar.
 - **Export JSON / Import JSON** for sharing or version-controlling a layout.
 

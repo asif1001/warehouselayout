@@ -91,6 +91,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The 2D view opens centered on the layout.** Startup used to drop the camera
+  at a hard-coded world point, so the plan could open partly or entirely off
+  screen depending on the file. The editor now frames the layout on load exactly
+  as **Center map** (`Home`) does — centered, with 8% breathing room and zoomed
+  to fit — so the first frame is always the whole plan.
 - **The 3D preview models each placed element** instead of blocking it in as one
   box. Warehouse equipment now reads at a glance: the forklift has a
   counterweight, an overhead guard, a mast with cross-members, two fork tines and
