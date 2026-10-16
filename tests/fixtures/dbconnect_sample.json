@@ -216,7 +216,7 @@
     }
   ],
   "editor": {
-    "schemaVersion": 6,
+    "schemaVersion": 7,
     "naming": { "separator": "-", "bayPad": 2 },
     "binOverrides": {}
   }

@@ -6,7 +6,9 @@
 // lightweight structural check used by import and by the test suite; it is not a
 // full JSON-Schema validator, just enough to catch obviously broken files.
 
-export const SCHEMA_VERSION = 6;
+import { FIXTURE_ROTATIONS } from './fixtures.js';
+
+export const SCHEMA_VERSION = 7;
 
 // Editor-native kinds (door/ramp/junction/dock/staging/charge) plus db_connect
 // kinds (access_point/waypoint/staging_area/reference_marker) tolerated on
@@ -70,6 +72,62 @@ export function validateLayout(layout) {
     push('binOverrides must be an object');
   }
 
+  // Optional editor extensions. Layouts written before free text / label
+  // styling existed simply omit them, so these are only checked when present.
+  if (layout.texts != null) {
+    if (!Array.isArray(layout.texts)) {
+      push('texts must be an array');
+    } else {
+      layout.texts.forEach((t, i) => {
+        if (typeof t.id !== 'string') push(`texts[${i}].id must be a string`);
+        if (typeof t.text !== 'string') push(`texts[${i}].text must be a string`);
+        if (!isFiniteNumber(t.x) || !isFiniteNumber(t.y)) push(`texts[${i}] needs numeric x,y`);
+        if (!isFiniteNumber(t.size) || t.size <= 0) push(`texts[${i}].size must be a positive number`);
+      });
+    }
+  }
+  if (layout.labelStyle != null) {
+    if (typeof layout.labelStyle !== 'object' || Array.isArray(layout.labelStyle)) {
+      push('labelStyle must be an object');
+    } else {
+      if (!isFiniteNumber(layout.labelStyle.scale) || layout.labelStyle.scale <= 0)
+        push('labelStyle.scale must be a positive number');
+      if (typeof layout.labelStyle.font !== 'string') push('labelStyle.font must be a string');
+    }
+  }
+  if (layout.labelOverrides != null) {
+    if (typeof layout.labelOverrides !== 'object' || Array.isArray(layout.labelOverrides)) {
+      push('labelOverrides must be an object');
+    } else {
+      for (const [key, ov] of Object.entries(layout.labelOverrides)) {
+        if (ov == null || typeof ov !== 'object' || Array.isArray(ov)) {
+          push(`labelOverrides[${key}] must be an object`);
+          continue;
+        }
+        if (ov.size != null && (!isFiniteNumber(ov.size) || ov.size <= 0))
+          push(`labelOverrides[${key}].size must be a positive number`);
+        if (ov.font != null && typeof ov.font !== 'string')
+          push(`labelOverrides[${key}].font must be a string`);
+      }
+    }
+  }
+
+  if (layout.fixtures != null) {
+    if (!Array.isArray(layout.fixtures)) {
+      push('fixtures must be an array');
+    } else {
+      layout.fixtures.forEach((fx, i) => {
+        if (typeof fx.id !== 'string') push(`fixtures[${i}].id must be a string`);
+        if (typeof fx.kind !== 'string') push(`fixtures[${i}].kind must be a string`);
+        if (!isFiniteNumber(fx.x) || !isFiniteNumber(fx.y)) push(`fixtures[${i}] needs numeric x,y`);
+        if (!isFiniteNumber(fx.w) || fx.w <= 0) push(`fixtures[${i}].w must be a positive number`);
+        if (!isFiniteNumber(fx.d) || fx.d <= 0) push(`fixtures[${i}].d must be a positive number`);
+        if (!FIXTURE_ROTATIONS.includes(fx.rot))
+          push(`fixtures[${i}].rot must be one of ${FIXTURE_ROTATIONS.join(', ')}`);
+      });
+    }
+  }
+
   (layout.zones || []).forEach((z, i) => {
     for (const k of ['x', 'y', 'w', 'd', 'elev', 'clearH']) {
       if (!isFiniteNumber(z[k])) push(`zones[${i}].${k} must be a number`);
@@ -96,6 +154,8 @@ export function validateLayout(layout) {
     if (!RACK_DIRS.includes(r.dir)) push(`racks[${i}].dir must be one of ${RACK_DIRS.join(', ')}`);
     if (!Number.isInteger(r.bays) || r.bays < 1) push(`racks[${i}].bays must be a positive integer`);
     if (!Number.isInteger(r.levels) || r.levels < 1) push(`racks[${i}].levels must be a positive integer`);
+    if (r.aisle !== undefined && r.aisle !== null && (!isFiniteNumber(r.aisle) || r.aisle < 0))
+      push(`racks[${i}].aisle must be a non-negative number when present`);
     if (!Array.isArray(r.levelHeights)) {
       push(`racks[${i}].levelHeights must be an array`);
     } else {

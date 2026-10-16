@@ -1,10 +1,14 @@
 // preview3d.js — read-only 3D view of the current layout. Mirrors the 2D plan:
 // zone slabs with clear-height wall outlines, stacked rack bins, path nodes and
-// edges. Camera is a simple custom orbit (drag rotate, right-drag pan, wheel
-// zoom). It is rebuilt from a layout snapshot each time the user opens 3D.
+// edges, and a model of every placed element (see models3d.js). Camera is a
+// simple custom orbit (drag rotate, right-drag pan, wheel zoom). It is rebuilt
+// from a layout snapshot each time the user opens 3D.
 
 import * as THREE from '../vendor/three.module.js';
 import { zoneOf, levelBaseZ } from './geometry.js';
+import { resolveLabelStyle, labelKey } from './labels.js';
+import { fixtureDef } from './fixtures.js';
+import { fixtureParts } from './models3d.js';
 
 export function createPreview3D(wrap) {
   let ctx = null; // { renderer, raf }
@@ -17,16 +21,21 @@ export function createPreview3D(wrap) {
     ctx = null;
   }
 
-  function makeLabel(text, size, color) {
+  function makeLabel(text, size, color, style = {}) {
     const pad = 8;
     const fp = 46;
+    // Honour an explicit Normal/Bold from the Font toolbar; the bin-labelling
+    // call sites pass no style and keep their heavier look.
+    const weight = style.weight === 700 ? 700 : style.weight === 400 ? 400 : 600;
+    const italic = style.italic ? 'italic ' : '';
+    const font = `${italic}${weight} ${fp}px "${style.font || 'Consolas'}", monospace`;
     const c = document.createElement('canvas');
     let g = c.getContext('2d');
-    g.font = `600 ${fp}px Consolas`;
+    g.font = font;
     c.width = Math.ceil(g.measureText(text).width) + pad * 2;
     c.height = fp + pad * 2;
     g = c.getContext('2d');
-    g.font = `600 ${fp}px Consolas`;
+    g.font = font;
     g.fillStyle = color;
     g.textBaseline = 'middle';
     g.fillText(text, pad, c.height / 2);
@@ -39,6 +48,17 @@ export function createPreview3D(wrap) {
 
   function build(state, showLabels = true) {
     teardown();
+
+    // Shared label defaults authored in the 2D sidebar.
+    const raw = state.labelStyle ?? {};
+    const ls = {
+      scale: typeof raw.scale === 'number' && raw.scale > 0 ? raw.scale : 1,
+      show: raw.show ?? {},
+    };
+    // Per-label overrides, so one restyled label keeps its look in 3D too.
+    const overrides = state.labelOverrides || {};
+    const style3d = (kind, id, bayIndex) =>
+      resolveLabelStyle(state.labelStyle, overrides[labelKey(kind, id, bayIndex)]);
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x14181d);
@@ -129,8 +149,14 @@ export function createPreview3D(wrap) {
       wall.position.copy(W(z.x + z.w / 2, z.y + z.d / 2, z.elev + z.clearH / 2));
       scene.add(wall);
 
-      if (showLabels) {
-        const lb = makeLabel('ZONE ' + z.id, 10, '#eef2f6');
+      if (showLabels && ls.show.zones !== false) {
+        const st = style3d('zone', z.id);
+        const lb = makeLabel(
+          'ZONE ' + z.id,
+          st.size ? st.size * 8 : 10 * ls.scale,
+          st.color ?? '#eef2f6',
+          st,
+        );
         lb.position.copy(W(z.x + z.w / 2, z.y + z.d / 2, z.elev + z.clearH + 1.2));
         scene.add(lb);
       }
@@ -188,11 +214,75 @@ export function createPreview3D(wrap) {
       );
       m.position.copy(W(n.x, n.y, elev + 0.5));
       scene.add(m);
-      if (showLabels) {
-        const lb = makeLabel(n.id, 5, '#ff9d94');
+      if (showLabels && ls.show.nodes !== false) {
+        const st = style3d('node', n.id);
+        const lb = makeLabel(n.id, st.size ? st.size * 8 : 5 * ls.scale, st.color ?? '#ff9d94', st);
         lb.position.copy(W(n.x, n.y, elev + 1.8));
         scene.add(lb);
       }
+    });
+
+    // Placed building + warehouse elements. Each kind has its own model (see
+    // models3d.js) so a forklift reads as a forklift rather than a box; a kind
+    // with no model falls back to its footprint slab.
+    const matCache = new Map();
+    const matFor = (color, opacity) => {
+      const key = color + '|' + opacity;
+      let m = matCache.get(key);
+      if (!m) {
+        m = new THREE.MeshLambertMaterial({ color: new THREE.Color(color) });
+        if (opacity < 1) {
+          m.transparent = true;
+          m.opacity = opacity;
+        }
+        matCache.set(key, m);
+      }
+      return m;
+    };
+    (state.fixtures || []).forEach((f) => {
+      const def = fixtureDef(f.kind);
+      if (!def) return;
+      const zone = zoneOf(state.zones, f.x, f.y);
+      const elev = zone ? zone.elev : 0;
+      const group = new THREE.Group();
+      fixtureParts(f.kind, f.w, f.d, def.h).forEach((part) => {
+        const color = part.color || def.color;
+        const opacity = part.opacity ?? 1;
+        let mesh;
+        if (part.shape === 'cyl') {
+          mesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(part.r, part.r, part.h, 20),
+            matFor(color, opacity),
+          );
+          // Cylinders stand along +Y; lay the wheels on their side.
+          if (part.axis === 'x') mesh.rotation.z = Math.PI / 2;
+          if (part.axis === 'z') mesh.rotation.x = Math.PI / 2;
+        } else {
+          mesh = new THREE.Mesh(new THREE.BoxGeometry(part.w, part.h, part.d), matFor(color, opacity));
+          if (part.rx) mesh.rotation.x = part.rx;
+        }
+        mesh.position.set(part.x, part.y, part.z);
+        group.add(mesh);
+      });
+      group.position.copy(W(f.x, f.y, elev));
+      // Plan rotation is clockwise on screen, which is -rot about three.js +Y.
+      group.rotation.y = (-f.rot * Math.PI) / 180;
+      scene.add(group);
+      if (showLabels && ls.show.fixtures !== false) {
+        const st = style3d('fixture', f.id);
+        const lb = makeLabel(def.label, st.size ? st.size * 8 : 4 * ls.scale, def.color, st);
+        lb.position.copy(W(f.x, f.y, elev + def.h + 1.2));
+        scene.add(lb);
+      }
+    });
+
+    // Free text annotations float above the floor, matching the 2D plan.
+    state.texts.forEach((t) => {
+      const zone = zoneOf(state.zones, t.x, t.y);
+      const elev = zone ? zone.elev : 0;
+      const lb = makeLabel(t.text, Math.max(3, t.size * 6) * ls.scale, t.color || '#eef2f6', t);
+      lb.position.copy(W(t.x, t.y, elev + 2.2));
+      scene.add(lb);
     });
 
     state.edges.forEach((ed) => {

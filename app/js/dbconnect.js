@@ -6,9 +6,11 @@
 //
 // Owns:   toDbConnect(), fromDbConnect()
 // Must not: import schema.js or migrations.js (would create circular deps)
-// May import: geometry.js (pure functions)
+// May import: geometry.js, labels.js (pure functions)
 
 import { expandBins, edgeLength, zoneOf } from './geometry.js';
+import { normalizeLabelStyle, normalizeLabelOverrides, normalizeTexts } from './labels.js';
+import { normalizeFixtures } from './fixtures.js';
 
 const DIR_TO_ORIENTATION = { E: 'length_along_x', N: 'length_along_y' };
 const ORIENTATION_TO_DIR = { length_along_x: 'E', length_along_y: 'N' };
@@ -38,10 +40,16 @@ const DEFAULT_BIN_LABEL_FORMAT = {
 export function toDbConnect(state) {
   const { schemaVersion, naming, binOverrides, categories, vehicles, dwell_times, ...rest } = state;
 
+  // The `editor` block carries everything that is editor-specific rather than
+  // db_connect: naming, per-bin label overrides, the shared label style and any
+  // free text annotations. Additive — readers default every field.
   const editor = {
     schemaVersion,
     naming: naming ?? { separator: '-', bayPad: 2 },
     binOverrides: binOverrides ?? {},
+    labels: normalizeLabelStyle(state.labelStyle),
+    labelOverrides: normalizeLabelOverrides(state.labelOverrides),
+    texts: normalizeTexts(state.texts),
   };
 
   const { coordinate_system, bin_label_format, ...metaRest } = state.meta ?? {};
@@ -82,6 +90,7 @@ export function toDbConnect(state) {
     vehicles: vehicles ?? {},
     dwell_times: dwell_times ?? {},
     zones: rest.zones ?? [],
+    fixtures: normalizeFixtures(state.fixtures),
     nodes,
     edges,
     racks,
@@ -130,11 +139,15 @@ export function fromDbConnect(dbLayout) {
     settings: settingsRest,
     naming: editor.naming ?? dbLayout.naming ?? { separator: '-', bayPad: 2 },
     binOverrides: editor.binOverrides ?? dbLayout.binOverrides ?? {},
+    labelStyle: normalizeLabelStyle(editor.labels ?? dbLayout.labelStyle),
+    labelOverrides: normalizeLabelOverrides(editor.labelOverrides ?? dbLayout.labelOverrides),
+    texts: normalizeTexts(editor.texts ?? dbLayout.texts),
     categories: dbLayout.categories ?? {},
     binTypes: dbLayout.binTypes ?? {},
     vehicles: dbLayout.vehicles ?? {},
     dwell_times: dbLayout.dwell_times ?? {},
     zones: dbLayout.zones ?? [],
+    fixtures: normalizeFixtures(dbLayout.fixtures ?? editor.fixtures),
     nodes,
     edges,
     racks,

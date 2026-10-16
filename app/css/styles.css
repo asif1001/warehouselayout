@@ -65,6 +65,13 @@ body {
 .btn:hover {
   border-color: var(--dim);
 }
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn:disabled:hover {
+  border-color: var(--line);
+}
 .btn.active {
   background: var(--accent);
   color: #1a1408;
@@ -81,6 +88,87 @@ body {
   height: 22px;
   background: var(--line);
   margin: 0 4px;
+}
+
+/* ---------- toolbar dropdown menus ---------- */
+.menu {
+  position: relative;
+  display: inline-block;
+}
+.menu-btn .caret {
+  font-size: 9px;
+  opacity: 0.75;
+  margin-left: 2px;
+}
+.menu-list {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 210px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  padding: 5px;
+  z-index: 40;
+}
+.menu.open .menu-list {
+  display: block;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.menu-item:hover {
+  background: var(--panel);
+}
+.menu-item.active {
+  background: var(--accent);
+  color: #1a1408;
+  font-weight: 600;
+}
+.menu-sep {
+  font:
+    600 10px/1 Consolas,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 8px 8px 3px;
+}
+.kbd {
+  font:
+    10px Consolas,
+    monospace;
+  color: var(--dim);
+}
+.menu-item.active .kbd {
+  color: #1a1408;
+  opacity: 0.7;
+}
+.field input[type='range'] {
+  flex: 1;
+}
+.labelval {
+  color: var(--dim);
+  font-size: 11px;
+  min-width: 52px;
+  text-align: right;
 }
 .spacer {
   flex: 1;
@@ -99,11 +187,11 @@ body {
   min-height: 0;
 }
 #side {
-  width: 268px;
+  width: 284px;
   background: var(--panel);
   border-right: 1px solid var(--line);
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px 11px 28px;
   flex: 0 0 auto;
 }
 #stage {
@@ -117,13 +205,18 @@ canvas#c2d {
   height: 100%;
   cursor: crosshair;
 }
+canvas#c2d:focus {
+  outline: none;
+}
 #c3dwrap {
   position: absolute;
   inset: 0;
   display: none;
 }
 
-#side h2 {
+/* ---------- sidebar section headings ---------- */
+#side h2,
+#side summary {
   font:
     600 10px/1 Consolas,
     monospace;
@@ -139,51 +232,287 @@ canvas#c2d {
   border-top: 0;
   padding-top: 0;
 }
+
+/* Collapsible sections (details / summary) with a chevron and hover state. */
+#side details {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 10px;
+}
+#side details > summary {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+#side details > summary::-webkit-details-marker {
+  display: none;
+}
+#side details > summary::before {
+  content: '\25B8';
+  font-size: 9px;
+  line-height: 1;
+  color: var(--dim);
+  transition: color 0.12s;
+}
+#side details[open] > summary::before {
+  content: '\25BE';
+}
+#side details > summary:hover {
+  color: var(--ink);
+}
+#side details > summary:hover::before {
+  color: var(--accent);
+}
+#side .det-body {
+  padding-top: 2px;
+}
+/* The outer "Layout settings" group reads as the panel's own heading. */
+#side details.root {
+  margin-top: 16px;
+}
+#side details.root > summary {
+  color: var(--ink);
+  letter-spacing: 0.14em;
+}
+#side details.root .det-body > details:first-child {
+  margin-top: 8px;
+}
+
+/* Sub-heading inside an element form: groups related fields. */
+.grp {
+  font:
+    600 9.5px/1 Consolas,
+    monospace;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--dim);
+  opacity: 0.85;
+  margin: 13px 0 5px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.grp:first-of-type {
+  margin-top: 9px;
+}
+
+/* Element form footer: the destructive action, set apart from the fields. */
+.formfoot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.formfoot .grow {
+  flex: 1;
+}
+.btn.del {
+  color: #e0a49b;
+  border-color: #4c3330;
+}
+.btn.del:hover {
+  color: #fff;
+  background: var(--node);
+  border-color: var(--node);
+}
+
+/* Boxed, in-form collapsibles (bin labels, per-bay overrides). */
+#side details.box {
+  margin-top: 10px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+#side details.box > summary {
+  padding: 7px 9px;
+  background: var(--panel2);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+}
+#side details.box[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+#side details.box .det-body {
+  padding: 7px 9px 9px;
+}
+
+/* Per-bin label override list. */
+.binovr-scroll {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+}
+.binovr-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.binovr-row:last-child {
+  border-bottom: 0;
+}
+.binovr-gen {
+  font:
+    10.5px Consolas,
+    monospace;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.binovr-inp {
+  min-width: 0;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font:
+    11px Consolas,
+    monospace;
+}
+.binovr-inp:hover {
+  background: var(--panel2);
+}
+.binovr-inp:focus {
+  background: var(--panel2);
+  border-color: var(--accent);
+  outline: none;
+}
+/* The bay readout above the rack form, tinted like a status strip. */
+.bay-readout {
+  background: var(--panel2);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  padding: 5px 8px;
+  color: var(--ink);
+}
+
 .field {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 5px 0;
+  gap: 7px;
+  margin: 4px 0;
 }
 .field label {
-  flex: 0 0 78px;
-  font-size: 12px;
+  flex: 0 0 74px;
+  font-size: 11.5px;
   color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Two short fields on one row (x/y, width/depth, level heights). The label
+   columns are fixed so every paired row in a form lines up. */
+.field.pair {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 58px minmax(0, 1fr);
+  gap: 4px 6px;
+}
+.field.pair label {
+  flex: none;
+  text-align: left;
+}
+.field.pair .ph {
+  /* keeps the second column aligned when a list has an odd length */
+  display: block;
+}
+/* A row of small buttons sitting in the input column of a field. */
+.rotrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.field .btnrow {
+  margin: 0;
 }
 .field input[type='text'],
 .field input[type='number'],
 .field select {
   flex: 1;
   min-width: 0;
+  width: 100%;
   background: var(--bg);
   border: 1px solid var(--line);
   color: var(--ink);
   border-radius: 4px;
-  padding: 4px 7px;
+  padding: 3px 6px;
   font:
-    12px Consolas,
+    11.5px Consolas,
     monospace;
 }
+.field input[type='text']:focus,
+.field input[type='number']:focus,
+.field select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
 .field input[type='color'] {
-  flex: 0 0 40px;
-  height: 24px;
+  flex: 0 0 36px;
+  height: 23px;
   border: 1px solid var(--line);
   background: var(--bg);
   border-radius: 4px;
   padding: 1px;
+}
+.field input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
 }
 .field input[type='checkbox'] {
   accent-color: var(--accent);
 }
 .hintline {
   font-size: 11px;
+  line-height: 1.45;
   color: var(--dim);
-  margin: 6px 0;
+  margin: 5px 0;
+}
+.hintline strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.sel-list {
+  margin: 6px 0 2px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+}
+.sel-row {
+  padding: 3px 8px;
+  font:
+    11px Consolas,
+    monospace;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sel-row:last-child {
+  border-bottom: 0;
 }
 .btnrow {
   display: flex;
   gap: 6px;
-  margin: 8px 0;
+  margin: 7px 0;
   flex-wrap: wrap;
 }
 .btn.small {
@@ -252,6 +581,84 @@ canvas#c2d {
   display: none;
 }
 
+/* ---------- floating Font toolbar ---------- */
+/* Pops up next to the label or text you clicked and edits only that one. */
+#fontbar {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: rgba(35, 42, 51, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  z-index: 5;
+}
+#fontbar select,
+#fontbar input[type='number'] {
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font:
+    12px Consolas,
+    monospace;
+}
+#fontbar input[type='number'] {
+  width: 58px;
+  text-align: center;
+}
+#fontbar input[type='color'] {
+  width: 30px;
+  height: 24px;
+  padding: 1px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.fb-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.fb-btn {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 4px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fb-btn:hover {
+  border-color: var(--dim);
+}
+.fb-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1408;
+}
+.fb-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+}
+.fb-cap {
+  font:
+    600 10px/1 Consolas,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 0 3px;
+}
+
 /* ---------- boot error overlay ---------- */
 #bootError {
   position: fixed;
@@ -279,4 +686,131 @@ canvas#c2d {
 #bootError code {
   font-family: Consolas, monospace;
   color: var(--accent);
+}
+
+/* ---------- new-rack dialog ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(8, 10, 13, 0.55);
+}
+.modal[hidden] {
+  display: none;
+}
+.modal-card {
+  width: 480px;
+  max-width: 100%;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head h2 {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.modal-x {
+  background: none;
+  border: 0;
+  color: var(--dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.modal-x:hover {
+  color: var(--ink);
+}
+.modal-body {
+  padding: 6px 14px 10px;
+  overflow-y: auto;
+}
+.modal-foot {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+}
+.rk-sec {
+  margin: 12px 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 3px;
+}
+.rk-sec:first-child {
+  margin-top: 4px;
+}
+.rk-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.rk-cols .field label {
+  flex: 0 0 84px;
+}
+.rk-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 2px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+}
+.rk-check input {
+  accent-color: var(--accent);
+}
+.modal-summary {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dim);
+  margin-bottom: 10px;
+}
+.modal-summary b {
+  color: var(--ink);
+}
+.rk-err {
+  font-size: 11px;
+  color: #e9b0a8;
+}
+.rk-err:not(:empty) {
+  margin-bottom: 8px;
+}
+.modal-foot .btnrow {
+  justify-content: flex-end;
+}
+#rk_add {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1408;
+  font-weight: 600;
+}
+.rk-tone-ok {
+  color: var(--ok);
+}
+.rk-tone-warn {
+  color: var(--accent);
+}
+.rk-tone-bad {
+  color: var(--node);
 }

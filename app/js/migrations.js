@@ -179,6 +179,20 @@ const MIGRATIONS = {
       },
     };
   },
+
+  // 6 -> 7: placed building / warehouse elements (fixtures).
+  // v6 could draw zones, rack rows, nodes and text but had no facility fit-out.
+  // v7 adds an optional top-level `fixtures` array of doors, windows, dock
+  // levellers, furniture, pallets and trucks. The migration seeds an empty array,
+  // so nothing renders differently until an element is actually placed.
+  6: (v6) => ({
+    ...v6,
+    fixtures: v6.fixtures ?? [],
+    editor: {
+      ...(v6.editor ?? {}),
+      schemaVersion: 7,
+    },
+  }),
 };
 
 // A layout with no explicit schemaVersion predates the field; treat it as v1.

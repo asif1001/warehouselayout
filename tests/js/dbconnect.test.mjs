@@ -396,3 +396,132 @@ test('fromDbConnect on default_layout.json: all racks have a defined dir', () =>
     assert.equal(r.orientation, undefined, `racks[${i}].orientation should be stripped`);
   });
 });
+
+// ── 7. label style + free text round-trip ────────────────────────────────────
+
+test('labelStyle and texts survive toDbConnect → fromDbConnect', () => {
+  const state = makeEditorState({
+    labelStyle: {
+      scale: 1.75,
+      font: 'Georgia',
+      weight: 700,
+      italic: true,
+      color: '#ffcc00',
+      halo: false,
+      show: { zones: true, racks: false, bays: true, nodes: false },
+    },
+    labelOverrides: { 'zone:OFFICE': { font: 'Arial', size: 3, underline: true } },
+    texts: [{ id: 'TXT-1', text: 'DOCK 3', x: 4, y: 5, size: 2.5, color: '#fff', align: 'center' }],
+  });
+
+  const db = toDbConnect(state);
+  assert.equal(db.editor.labels.scale, 1.75);
+  assert.equal(db.editor.labels.font, 'Georgia');
+  assert.equal(db.editor.labels.show.racks, false);
+  assert.equal(db.editor.labelOverrides['zone:OFFICE'].size, 3);
+  assert.equal(db.editor.texts.length, 1);
+  assert.equal(db.editor.texts[0].text, 'DOCK 3');
+
+  const back = fromDbConnect(db);
+  assert.equal(back.labelStyle.scale, 1.75);
+  assert.equal(back.labelStyle.font, 'Georgia');
+  assert.equal(back.labelStyle.weight, 700);
+  assert.equal(back.labelStyle.italic, true);
+  assert.equal(back.labelStyle.color, '#ffcc00');
+  assert.equal(back.labelStyle.halo, false);
+  assert.deepEqual(back.labelStyle.show, {
+    zones: true,
+    racks: false,
+    bays: true,
+    nodes: false,
+    fixtures: true,
+  });
+  assert.deepEqual(back.labelOverrides['zone:OFFICE'], { font: 'Arial', size: 3, underline: true });
+  assert.equal(back.texts.length, 1);
+  assert.equal(back.texts[0].text, 'DOCK 3');
+  assert.equal(back.texts[0].size, 2.5);
+  assert.equal(back.texts[0].align, 'center');
+});
+
+test('a file written before these fields existed loads with defaults', () => {
+  const db = toDbConnect(makeEditorState());
+  delete db.editor.labels;
+  delete db.editor.labelOverrides;
+  delete db.editor.texts;
+  delete db.fixtures;
+
+  const back = fromDbConnect(db);
+  assert.equal(back.labelStyle.scale, 1);
+  assert.equal(back.labelStyle.font, 'Consolas');
+  assert.deepEqual(back.labelOverrides, {});
+  assert.deepEqual(back.texts, []);
+  assert.deepEqual(back.fixtures, []);
+});
+
+// ── 8. placed building / warehouse elements ──────────────────────────────────
+
+test('fixtures survive toDbConnect → fromDbConnect', () => {
+  const fixtures = [
+    { id: 'F-1', kind: 'door', x: 4, y: 9, w: 1, d: 0.16, rot: 0 },
+    { id: 'F-2', kind: 'forklift', x: 12, y: 30, w: 1.4, d: 3, rot: 90 },
+  ];
+  const state = makeEditorState({ fixtures });
+
+  const db = toDbConnect(state);
+  assert.equal(db.fixtures.length, 2);
+  assert.equal(db.fixtures[0].kind, 'door');
+  assert.equal(db.fixtures[1].rot, 90);
+
+  const back = fromDbConnect(db);
+  assert.deepEqual(back.fixtures, fixtures);
+  const { ok, errors } = validateLayout(back);
+  assert.ok(ok, `Validation failed: ${errors.join('; ')}`);
+});
+
+test('toDbConnect() cleans a malformed fixtures list on the way out', () => {
+  const state = makeEditorState({
+    fixtures: [{ id: 'F-1', kind: 'desk', x: 1, y: 1, w: 0, d: 0.8, rot: 12 }],
+  });
+  const db = toDbConnect(state);
+  assert.deepEqual(db.fixtures, [{ id: 'F-1', kind: 'desk', x: 1, y: 1, w: 1, d: 0.8, rot: 0 }]);
+});
+
+test('a migrated v4 layout validates and carries the new fields', () => {
+  const state = fromDbConnect(migrate(V4_LAYOUT));
+  const { ok, errors } = validateLayout(state);
+  assert.ok(ok, `Validation failed: ${errors.join('; ')}`);
+  assert.equal(state.labelStyle.show.zones, true);
+  assert.deepEqual(state.texts, []);
+});
+
+test('validateLayout rejects a malformed text object', () => {
+  const state = fromDbConnect(toDbConnect(makeEditorState()));
+  state.texts = [{ id: 'TXT-1', text: 'ok', x: 0, y: 0, size: -1 }];
+  const { ok, errors } = validateLayout(state);
+  assert.equal(ok, false);
+  assert.ok(errors.some((e) => e.includes('texts[0].size must be a positive number')));
+});
+
+test('validateLayout rejects a malformed label style', () => {
+  const state = fromDbConnect(toDbConnect(makeEditorState()));
+  state.labelStyle = { scale: 0, font: 42 };
+  const { ok, errors } = validateLayout(state);
+  assert.equal(ok, false);
+  assert.ok(errors.some((e) => e.includes('labelStyle.scale must be a positive number')));
+  assert.ok(errors.some((e) => e.includes('labelStyle.font must be a string')));
+});
+
+test('validateLayout rejects a malformed label override', () => {
+  const state = fromDbConnect(toDbConnect(makeEditorState()));
+  state.labelOverrides = { 'zone:OFFICE': { size: 0 } };
+  const { ok, errors } = validateLayout(state);
+  assert.equal(ok, false);
+  assert.ok(errors.some((e) => e.includes('labelOverrides[zone:OFFICE].size must be a positive number')));
+});
+
+test('validateLayout accepts a well-formed label override', () => {
+  const state = fromDbConnect(toDbConnect(makeEditorState()));
+  state.labelOverrides = { 'zone:OFFICE': { font: 'Arial', size: 3, underline: true } };
+  const { ok, errors } = validateLayout(state);
+  assert.ok(ok, `Validation failed: ${errors.join('; ')}`);
+});

@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from numbers import Real
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+
+# Quarter turns are the only fixture rotations, which keeps the footprint exact.
+FIXTURE_ROTATIONS = (0, 90, 180, 270)
 
 # Editor-native kinds plus db_connect kinds tolerated on import (DEBT-005).
 NODE_KINDS = {
@@ -70,6 +73,79 @@ def validate_layout(layout) -> list[str]:
     if not isinstance(bin_overrides, dict):
         errors.append("binOverrides must be an object")
 
+    # Placed building / warehouse elements (doors, windows, dock levellers,
+    # furniture, pallets, trucks). Additive: v6 files simply omit it.
+    fixtures = layout.get("fixtures")
+    if fixtures is not None:
+        if not isinstance(fixtures, list):
+            errors.append("fixtures must be an array")
+        else:
+            for i, fx in enumerate(fixtures):
+                if not isinstance(fx, dict):
+                    errors.append(f"fixtures[{i}] must be an object")
+                    continue
+                if not isinstance(fx.get("id"), str):
+                    errors.append(f"fixtures[{i}].id must be a string")
+                if not isinstance(fx.get("kind"), str):
+                    errors.append(f"fixtures[{i}].kind must be a string")
+                if not _is_number(fx.get("x")) or not _is_number(fx.get("y")):
+                    errors.append(f"fixtures[{i}] needs numeric x,y")
+                if not _is_number(fx.get("w")) or fx["w"] <= 0:
+                    errors.append(f"fixtures[{i}].w must be a positive number")
+                if not _is_number(fx.get("d")) or fx["d"] <= 0:
+                    errors.append(f"fixtures[{i}].d must be a positive number")
+                if fx.get("rot") not in FIXTURE_ROTATIONS:
+                    errors.append(
+                        f"fixtures[{i}].rot must be one of "
+                        f"{', '.join(str(r) for r in FIXTURE_ROTATIONS)}"
+                    )
+
+    # Optional editor extensions. Layouts written before free text / label
+    # styling existed simply omit them, so these are only checked when present.
+    texts = layout.get("texts")
+    if texts is not None:
+        if not isinstance(texts, list):
+            errors.append("texts must be an array")
+        else:
+            for i, t in enumerate(texts):
+                if not isinstance(t, dict):
+                    errors.append(f"texts[{i}] must be an object")
+                    continue
+                if not isinstance(t.get("id"), str):
+                    errors.append(f"texts[{i}].id must be a string")
+                if not isinstance(t.get("text"), str):
+                    errors.append(f"texts[{i}].text must be a string")
+                if not _is_number(t.get("x")) or not _is_number(t.get("y")):
+                    errors.append(f"texts[{i}] needs numeric x,y")
+                if not _is_number(t.get("size")) or t["size"] <= 0:
+                    errors.append(f"texts[{i}].size must be a positive number")
+
+    label_style = layout.get("labelStyle")
+    if label_style is not None:
+        if not isinstance(label_style, dict):
+            errors.append("labelStyle must be an object")
+        else:
+            if not _is_number(label_style.get("scale")) or label_style["scale"] <= 0:
+                errors.append("labelStyle.scale must be a positive number")
+            if not isinstance(label_style.get("font"), str):
+                errors.append("labelStyle.font must be a string")
+
+    label_overrides = layout.get("labelOverrides")
+    if label_overrides is not None:
+        if not isinstance(label_overrides, dict):
+            errors.append("labelOverrides must be an object")
+        else:
+            for key, ov in label_overrides.items():
+                if not isinstance(ov, dict):
+                    errors.append(f"labelOverrides[{key}] must be an object")
+                    continue
+                if ov.get("size") is not None and (
+                    not _is_number(ov.get("size")) or ov["size"] <= 0
+                ):
+                    errors.append(f"labelOverrides[{key}].size must be a positive number")
+                if ov.get("font") is not None and not isinstance(ov.get("font"), str):
+                    errors.append(f"labelOverrides[{key}].font must be a string")
+
     for i, z in enumerate(layout.get("zones") or []):
         for k in ("x", "y", "w", "d", "elev", "clearH"):
             if not _is_number(z.get(k)):
@@ -123,6 +199,9 @@ def validate_layout(layout) -> list[str]:
             errors.append(f"racks[{i}].bayStart must be a positive integer")
         if not isinstance(r.get("bayReverse"), bool):
             errors.append(f"racks[{i}].bayReverse must be a boolean")
+        aisle = r.get("aisle")
+        if aisle is not None and (not _is_number(aisle) or aisle < 0):
+            errors.append(f"racks[{i}].aisle must be a non-negative number when present")
         if r.get("type") not in bin_type_names:
             errors.append(f"racks[{i}].type {r.get('type')!r} is not a defined bin type")
         blo = r.get("bayLevelOverrides")
@@ -207,11 +286,15 @@ def from_db_connect(db_layout: dict) -> dict:
         "settings": settings,
         "naming": editor.get("naming", {"separator": "-", "bayPad": 2}),
         "binOverrides": editor.get("binOverrides", {}),
+        "labelStyle": editor.get("labels"),
+        "labelOverrides": editor.get("labelOverrides") or {},
+        "texts": editor.get("texts") or [],
         "categories": db_layout.get("categories") or {},
         "binTypes": db_layout.get("binTypes") or {},
         "vehicles": db_layout.get("vehicles") or {},
         "dwell_times": db_layout.get("dwell_times") or {},
         "zones": db_layout.get("zones") or [],
+        "fixtures": db_layout.get("fixtures") or editor.get("fixtures") or [],
         "nodes": nodes,
         "edges": edges,
         "racks": racks,

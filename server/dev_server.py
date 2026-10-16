@@ -15,7 +15,6 @@ Any static server pointed at ``app/`` works too, e.g. ``cd app && npx http-serve
 from __future__ import annotations
 
 import http.server
-import socketserver
 import sys
 import threading
 import webbrowser
@@ -56,7 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     start_port = port
     for candidate in range(start_port, start_port + 10):
         try:
-            httpd = socketserver.TCPServer(("", candidate), handler)
+            # Threading matters: a browser keeps connections alive, and a
+            # single-threaded server would stall every other request behind one.
+            httpd = http.server.ThreadingHTTPServer(("", candidate), handler)
             port = candidate
             break
         except OSError:

@@ -103,6 +103,126 @@ export function bayOf(rack, binTypes, x, y) {
   return b >= 0 && b < rack.bays ? b : null;
 }
 
+// ── Rack row spacing ────────────────────────────────────────────────────────
+// A rack row has a cross-axis thickness (its depth) and an *aisle*: the clear
+// gap kept between this row and the next row stacked on its far side. Rows are
+// therefore spaced `pitch = depth + aisle` apart. The aisle is a per-row value
+// (`rack.aisle`); when absent the caller's fallback (the warehouse-wide
+// default) applies, so one setting can space a whole block.
+
+export const DEFAULT_RACK_AISLE = 1; // metres — clear gap used when unset
+
+// Effective clear-gap distance for a rack, in metres.
+export function rackAisle(rack, fallback = DEFAULT_RACK_AISLE) {
+  const a = rack?.aisle;
+  if (Number.isFinite(a) && a >= 0) return a;
+  return Number.isFinite(fallback) && fallback >= 0 ? fallback : DEFAULT_RACK_AISLE;
+}
+
+// Full axis-aligned footprint of a rack row: { spanX, spanY, depth }. `depth`
+// is the cross-axis thickness — the direction rows stack in — and is always the
+// bin type's `d`, whichever way the row runs.
+export function rackFootprint(rack, binTypes) {
+  const t = binTypes?.[rack.type] || { w: 4.5, d: 4 };
+  if (rack.dir === 'E') return { spanX: rack.bays * t.w, spanY: t.d, depth: t.d };
+  return { spanX: t.d, spanY: rack.bays * t.w, depth: t.d };
+}
+
+// How rows of this rack stack: which world axis, which sign, and the row pitch.
+// dir 'E' rows run east, so the next row sits below (negative y); dir 'N' rows
+// run north, so the next row sits east (positive x).
+export function rackRowAxis(rack, binTypes, fallback) {
+  const { depth } = rackFootprint(rack, binTypes);
+  return {
+    axis: rack.dir === 'E' ? 'y' : 'x',
+    sign: rack.dir === 'E' ? -1 : 1,
+    depth,
+    pitch: depth + rackAisle(rack, fallback),
+  };
+}
+
+// Anchor (Start x / Start y) of the `steps`-th row beyond this one. steps = 1 is
+// the immediately adjacent row, one pitch away.
+export function nextRackRow(rack, binTypes, steps = 1, fallback) {
+  const a = rackRowAxis(rack, binTypes, fallback);
+  const delta = a.sign * a.pitch * steps;
+  return {
+    x: rack.x + (a.axis === 'x' ? delta : 0),
+    y: rack.y + (a.axis === 'y' ? delta : 0),
+  };
+}
+
+// Standard aisle clearances, widest first, for the "what fits here?" readout in
+// the New-rack dialog. Approximate planning guidance — not a code ruling.
+export const AISLE_GUIDE = [
+  { min: 3.5, label: 'Counterbalance forklift', tone: 'ok' },
+  { min: 2.7, label: 'Reach truck', tone: 'ok' },
+  { min: 2.2, label: 'Powered pallet truck (BOPT)', tone: 'warn' },
+  { min: 1.4, label: 'Hand pallet truck / walkway', tone: 'warn' },
+  { min: 0, label: 'Too tight for equipment', tone: 'bad' },
+];
+
+// Which aisle tier a clear width falls into: { min, label, tone }.
+export function aisleFit(metres) {
+  const m = Number.isFinite(metres) && metres >= 0 ? metres : 0;
+  return { ...(AISLE_GUIDE.find((g) => m >= g.min) ?? AISLE_GUIDE[AISLE_GUIDE.length - 1]) };
+}
+
+// Anchor positions for a block of identical rows laid out from one start point.
+// With `twin`, each step is a back-to-back pair (two rows sharing a spine), so a
+// step is 2·depth + aisle; otherwise it is depth + aisle. Returns one entry per
+// rack, in placement order, each flagged `twin` for the mirrored second row.
+export function rackBlockPositions({ x, y, dir, depth, aisle = 0, rows = 1, twin = false }) {
+  const n = Math.max(1, Math.min(500, Math.floor(rows) || 1));
+  const step = (twin ? depth * 2 : depth) + Math.max(0, aisle);
+  const sign = dir === 'E' ? -1 : 1;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const main = {
+      x: x + (dir === 'E' ? 0 : sign * step * i),
+      y: y + (dir === 'E' ? sign * step * i : 0),
+      twin: false,
+    };
+    out.push(main);
+    if (twin) {
+      out.push({
+        x: main.x + (dir === 'E' ? 0 : depth),
+        y: main.y + (dir === 'E' ? -depth : 0),
+        twin: true,
+      });
+    }
+  }
+  return out;
+}
+
+// Key of a bin type whose W/D/H match `dims`, or null when none does (so the
+// caller can save the size as a new type).
+export function matchBinType(binTypes, { w, d, h }, tol = 1e-6) {
+  for (const [name, t] of Object.entries(binTypes || {})) {
+    if (Math.abs(t.w - w) <= tol && Math.abs(t.d - d) <= tol && Math.abs(t.h - h) <= tol) return name;
+  }
+  return null;
+}
+
+// Row tokens for a block of rows sharing one base label: a single letter
+// increments (A → B → C); anything else gains a numeric suffix (ROW1, ROW12…).
+export function rowTokensFor(base, count) {
+  const b = String(base ?? '');
+  const n = Math.max(1, Math.min(500, Math.floor(count) || 1));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    if (i === 0) {
+      out.push(b);
+    } else if (/^[A-Za-z]$/.test(b)) {
+      const c = String.fromCharCode(b.charCodeAt(0) + (i % 26));
+      out.push(/^[A-Za-z]$/.test(c) ? c : `${b}${i + 1}`);
+    } else {
+      out.push(`${b}${i + 1}`);
+    }
+  }
+  return out;
+}
+
 // Resolve the row-bay label for a single bay (no level suffix). Uses the same
 // naming fields as expandBins so the result always matches the prefix of the
 // whse_location that expandBins emits for level 1 of this bay (no overrides).

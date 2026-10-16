@@ -81,10 +81,11 @@ const V5_LAYOUT = {
   dwell_times: {},
 };
 
-test('migration 5→6 adds bayLevelOverrides: {} to racks that lack it', () => {
+test('migrate() walks 5→6 and adds bayLevelOverrides: {} to racks that lack it', () => {
   const up = migrate(V5_LAYOUT);
-  assert.equal(up.editor.schemaVersion, 6);
+  assert.equal(up.editor.schemaVersion, SCHEMA_VERSION);
   assert.deepEqual(up.racks[0].bayLevelOverrides, {});
+  assert.deepEqual(up.fixtures, []);
 });
 
 test('migration 5→6 preserves existing bayLevelOverrides on racks that already have them', () => {
@@ -101,10 +102,28 @@ test('migration 5→6 preserves existing bayLevelOverrides on racks that already
   assert.deepEqual(up.racks[0].bayLevelOverrides, { 1: { levels: 1, levelHeights: [3] } });
 });
 
-test('migration 5→6 is idempotent (re-running on already-v6 layout is a no-op)', () => {
+test('migration 6→7 seeds an empty fixtures array', () => {
+  const v6 = {
+    ...V5_LAYOUT,
+    fixtures: undefined,
+    editor: { ...V5_LAYOUT.editor, schemaVersion: 6 },
+  };
+  const up = migrate(v6);
+  assert.equal(up.editor.schemaVersion, SCHEMA_VERSION);
+  assert.deepEqual(up.fixtures, []);
+});
+
+test('migration 6→7 keeps existing fixtures intact', () => {
+  const fx = [{ id: 'F-1', kind: 'door', x: 1, y: 2, w: 1, d: 0.16, rot: 90 }];
+  const v6 = { ...V5_LAYOUT, fixtures: fx, editor: { ...V5_LAYOUT.editor, schemaVersion: 6 } };
+  const up = migrate(v6);
+  assert.deepEqual(up.fixtures, fx);
+});
+
+test('migrate() is idempotent (re-running on a current layout is a no-op)', () => {
   const up1 = migrate(V5_LAYOUT);
-  assert.equal(up1.editor.schemaVersion, 6);
-  // A v6 layout should pass through migrate() unchanged in schemaVersion
+  assert.equal(up1.editor.schemaVersion, SCHEMA_VERSION);
+  // A current layout should pass through migrate() unchanged in schemaVersion
   const up2 = migrate(up1);
-  assert.equal(up2.editor.schemaVersion, 6);
+  assert.equal(up2.editor.schemaVersion, SCHEMA_VERSION);
 });

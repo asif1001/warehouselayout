@@ -10,19 +10,63 @@
     <div id="app">
       <div id="topbar">
         <span class="brand">Warehouse Layout Editor</span>
-        <button class="btn tool active" data-tool="select" title="V">Select / Move</button>
-        <button class="btn tool" data-tool="zone" title="Z — drag a rectangle">+ Zone</button>
-        <button class="btn tool" data-tool="rack" title="R — drag along the row direction">+ Rack Row</button>
-        <button class="btn tool" data-tool="node" title="N — click to place">+ Node / Door</button>
-        <button class="btn tool" data-tool="edge" title="E — click node A then node B">+ Path Edge</button>
-        <button class="btn tool danger" data-tool="delete" title="X — click to delete">Delete</button>
+        <button class="btn active" data-tool="select" title="V">Select / Move</button>
+
+        <div class="menu" data-tools="zone node edge text">
+          <button class="btn menu-btn" title="Draw a zone, node, path edge or text">
+            + Add <span class="caret">&#9662;</span>
+          </button>
+          <div class="menu-list">
+            <button class="menu-item" data-tool="zone" title="Z">Zone<span class="kbd">Z</span></button>
+            <button class="menu-item" data-tool="node" title="N">Node<span class="kbd">N</span></button>
+            <button class="menu-item" data-tool="edge" title="E">Path Edge<span class="kbd">E</span></button>
+            <button class="menu-item" data-tool="text" title="T">Text<span class="kbd">T</span></button>
+          </div>
+        </div>
+
+        <div class="menu" id="menu-building" data-tools="fixture" data-group="building">
+          <button class="btn menu-btn" title="Doors, windows, dock equipment, furniture">
+            Building <span class="caret">&#9662;</span>
+          </button>
+          <div class="menu-list"></div>
+        </div>
+
+        <div class="menu" id="menu-warehouse" data-tools="fixture" data-group="warehouse">
+          <button class="btn menu-btn" title="Rack rows, pallets, forklifts, pallet trucks">
+            Warehouse <span class="caret">&#9662;</span>
+          </button>
+          <div class="menu-list"></div>
+        </div>
+
+        <button class="btn danger" data-tool="delete" title="X — click to delete">Delete</button>
         <div class="sep"></div>
-        <button class="btn" id="view2d">2D Plan</button>
-        <button class="btn" id="view3d">3D Preview</button>
+
+        <div class="menu">
+          <button class="btn menu-btn" title="Views">View <span class="caret">&#9662;</span></button>
+          <div class="menu-list">
+            <button class="menu-item" id="view2d" title="Back to the 2D plan">2D Plan</button>
+            <button class="menu-item" id="view3d" title="Orbit the layout in 3D">3D Preview</button>
+            <button class="menu-item" id="centerView" title="Home — recenter the map if you get lost">
+              Center map<span class="kbd">Home</span>
+            </button>
+          </div>
+        </div>
         <button class="btn active" id="toggleLabels" title="L — show/hide labels">Labels</button>
         <div class="sep"></div>
-        <button class="btn" id="exportBtn">Export JSON</button>
-        <button class="btn" id="importBtn">Import JSON</button>
+
+        <button class="btn" id="undoBtn" title="Undo — Ctrl+Z">Undo</button>
+        <button class="btn" id="redoBtn" title="Redo — Ctrl+Y or Ctrl+Shift+Z">Redo</button>
+        <div class="sep"></div>
+
+        <div class="menu">
+          <button class="btn menu-btn" title="Import / export a layout">
+            File <span class="caret">&#9662;</span>
+          </button>
+          <div class="menu-list">
+            <button class="menu-item" id="exportBtn">Export JSON</button>
+            <button class="menu-item" id="importBtn">Import JSON</button>
+          </div>
+        </div>
         <input type="file" id="importFile" accept=".json" style="display: none" />
         <div class="spacer"></div>
         <span id="savedFlag"></span>
@@ -32,50 +76,116 @@
         <div id="side">
           <div id="props"></div>
 
-          <h2>Background tracing image</h2>
-          <div class="btnrow">
-            <button class="btn small" id="bgLoad">Load image</button>
-            <button class="btn small" id="bgCal">Calibrate scale</button>
-            <button class="btn small" id="bgClear">Remove</button>
-          </div>
-          <div class="field">
-            <label>Opacity</label>
-            <input type="range" id="bgOpacity" min="0" max="100" value="35" style="flex: 1" />
-          </div>
-          <div class="hintline" id="bgInfo">
-            No image loaded. Load your floorplan PNG, then Calibrate: click two points a known distance apart.
-          </div>
+          <!-- Layout-wide settings. Collapsed to a single row while an element is
+               selected, so the element's own form is all that takes up space. -->
+          <details id="globals" class="sec root">
+            <summary>Layout settings</summary>
+            <div class="det-body">
+              <details class="sec" id="secBg">
+                <summary>Background image</summary>
+                <div class="det-body">
+                  <div class="btnrow">
+                    <button class="btn small" id="bgLoad">Load image</button>
+                    <button class="btn small" id="bgCal">Calibrate scale</button>
+                    <button class="btn small" id="bgClear">Remove</button>
+                  </div>
+                  <div class="field">
+                    <label>Opacity</label>
+                    <input type="range" id="bgOpacity" min="0" max="100" value="35" />
+                  </div>
+                  <div class="hintline" id="bgInfo">
+                    No image loaded. Load your floorplan PNG, then Calibrate: click two points a known
+                    distance apart.
+                  </div>
+                </div>
+              </details>
 
-          <h2>Bin types</h2>
-          <div class="bt-row bt-head">
-            <span>name</span><span>w</span><span>d</span><span>h</span><span></span><span></span>
-          </div>
-          <div id="binTypeList"></div>
-          <div class="btnrow"><button class="btn small" id="addBinType">+ Add type</button></div>
+              <details class="sec" id="secBins" open>
+                <summary>Bin types</summary>
+                <div class="det-body">
+                  <div class="bt-row bt-head">
+                    <span>name</span><span>w</span><span>d</span><span>h</span><span></span><span></span>
+                  </div>
+                  <div id="binTypeList"></div>
+                  <div class="btnrow"><button class="btn small" id="addBinType">+ Add type</button></div>
+                </div>
+              </details>
 
-          <h2>Settings</h2>
-          <div class="field">
-            <label>Snap (m)</label><input type="number" id="snapIn" value="0.3" min="0" step="0.1" />
-          </div>
-          <div class="field">
-            <label>Grid (m)</label><input type="number" id="gridIn" value="3" min="0.5" step="0.5" />
-          </div>
+              <details class="sec" id="secSettings" open>
+                <summary>Plan settings</summary>
+                <div class="det-body">
+                  <div class="field">
+                    <label>Snap (m)</label><input type="number" id="snapIn" value="0.3" min="0" step="0.1" />
+                  </div>
+                  <div class="field">
+                    <label>Grid (m)</label><input type="number" id="gridIn" value="3" min="0.5" step="0.5" />
+                  </div>
+                  <div class="field">
+                    <label title="Clear gap between rack rows, used when a row has no aisle of its own"
+                      >Rack aisle</label
+                    ><input type="number" id="aisleIn" value="1" min="0" step="0.25" />
+                  </div>
+                </div>
+              </details>
 
-          <h2>Keyboard</h2>
-          <div class="hintline">
-            V select &middot; Z zone &middot; R rack &middot; N node &middot; E edge &middot; X delete<br />
-            L labels &middot; Esc cancel &middot; Del remove selected<br />
-            Right-drag pan &middot; Scroll zoom
-          </div>
+              <details class="sec" id="secKeys">
+                <summary>Keyboard &amp; tips</summary>
+                <div class="det-body">
+                  <div class="hintline">
+                    V select &middot; Z zone &middot; R rack &middot; N node &middot; E edge &middot; T
+                    text<br />
+                    X delete &middot; L labels &middot; Esc cancel &middot; Del remove selected<br />
+                    Ctrl+Z undo &middot; Ctrl+Y redo<br />
+                    Ctrl+C copy &middot; Ctrl+X cut &middot; Ctrl+V paste &middot; Ctrl+D duplicate<br />
+                    Shift+click / Shift+drag selects several &middot; Ctrl+A all rack rows<br />
+                    Arrows pan &middot; Scroll zoom &middot; Space-drag pan<br />
+                    Drag empty / right- / middle-drag pan &middot; Home centers the map<br />
+                    Click a label to restyle that label only<br />
+                    <strong>Rack Row</strong> (<strong>R</strong>) drags out a row, then opens a spec sheet
+                    for bays, levels, bin size and aisle<br />
+                    <strong>Building</strong> / <strong>Warehouse</strong> menus drop doors, windows, desks,
+                    pallets and trucks
+                  </div>
+                </div>
+              </details>
+            </div>
+          </details>
         </div>
 
         <div id="stage">
-          <canvas id="c2d"></canvas>
+          <canvas id="c2d" tabindex="0"></canvas>
+          <div id="fontbar">
+            <select id="fb_font" title="Font family"></select>
+            <span class="fb-group">
+              <button class="fb-btn" id="fb_shrink" title="Smaller font">A&#8595;</button>
+              <input type="number" id="fb_size" min="0.05" max="60" step="0.05" title="Font size (m)" />
+              <button class="fb-btn" id="fb_grow" title="Larger font">A&#8593;</button>
+            </span>
+            <span class="fb-sep"></span>
+            <button class="fb-btn" id="fb_bold" title="Bold"><b>B</b></button>
+            <button class="fb-btn" id="fb_italic" title="Italic"><i>I</i></button>
+            <button class="fb-btn" id="fb_underline" title="Underline"><u>U</u></button>
+            <span class="fb-sep"></span>
+            <select id="fb_align" title="Alignment">
+              <option value="left">Left</option>
+              <option value="center">Centre</option>
+              <option value="right">Right</option>
+            </select>
+            <span class="fb-sep"></span>
+            <input type="color" id="fb_highlight" title="Highlight colour" />
+            <button class="fb-btn" id="fb_hl_off" title="No highlight">Off</button>
+            <input type="color" id="fb_color" title="Font colour" />
+            <span class="fb-sep"></span>
+            <button class="fb-btn" id="fb_reset" title="Reset this label">Reset</button>
+            <span class="fb-cap">Font</span>
+          </div>
           <div id="c3dwrap"></div>
           <div id="status">x: — , y: —</div>
           <div id="toolHint"></div>
         </div>
       </div>
+
+      <div id="rackModal" class="modal" hidden></div>
     </div>
 
     <div id="bootError"></div>

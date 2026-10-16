@@ -11,6 +11,15 @@ import {
   enrichForExport,
   bayOf,
   resolveBayLabel,
+  rackAisle,
+  rackFootprint,
+  rackRowAxis,
+  nextRackRow,
+  aisleFit,
+  rackBlockPositions,
+  matchBinType,
+  rowTokensFor,
+  DEFAULT_RACK_AISLE,
 } from '../../app/js/geometry.js';
 import { fromDbConnect } from '../../app/js/dbconnect.js';
 
@@ -269,4 +278,149 @@ test('enrichForExport adds zone, distance and bins without mutating state', () =
   assert.ok('zone' in out.nodes[0]);
   assert.ok('distance_m' in out.edges[0]);
   assert.deepEqual(state, snapshot); // input untouched
+});
+
+// ── rack row spacing (aisle / pitch) ─────────────────────────────────────────
+
+test('rackAisle: explicit value wins, fallback otherwise', () => {
+  assert.equal(rackAisle({ aisle: 3.5 }, 1), 3.5);
+  assert.equal(rackAisle({ aisle: 0 }, 1), 0); // explicit back-to-back is honoured
+  assert.equal(rackAisle({}, 2.5), 2.5); // no aisle → inherits the fallback
+  assert.equal(rackAisle({ aisle: -1 }, 4), 4); // invalid value ignored
+  assert.equal(rackAisle({ aisle: 'x' }, 4), 4);
+});
+
+test('rackAisle: falls back to the built-in default when none is given', () => {
+  assert.equal(rackAisle({}), DEFAULT_RACK_AISLE);
+});
+
+test('rackFootprint: dir E runs bays along x, dir N along y', () => {
+  const bt = { STD: { w: 3, d: 1 } };
+  assert.deepEqual(rackFootprint({ type: 'STD', dir: 'E', bays: 4 }, bt), {
+    spanX: 12,
+    spanY: 1,
+    depth: 1,
+  });
+  assert.deepEqual(rackFootprint({ type: 'STD', dir: 'N', bays: 4 }, bt), {
+    spanX: 1,
+    spanY: 12,
+    depth: 1,
+  });
+});
+
+test('rackRowAxis: rows stack below for E, east for N, pitch = depth + aisle', () => {
+  const bt = { STD: { w: 3, d: 2 } };
+  assert.deepEqual(rackRowAxis({ type: 'STD', dir: 'E', aisle: 3 }, bt), {
+    axis: 'y',
+    sign: -1,
+    depth: 2,
+    pitch: 5,
+  });
+  assert.deepEqual(rackRowAxis({ type: 'STD', dir: 'N', aisle: 3 }, bt), {
+    axis: 'x',
+    sign: 1,
+    depth: 2,
+    pitch: 5,
+  });
+});
+
+test('rackRowAxis: uses the fallback aisle when the rack has none', () => {
+  const bt = { STD: { w: 3, d: 1 } };
+  assert.equal(rackRowAxis({ type: 'STD', dir: 'N' }, bt, 2.5).pitch, 3.5);
+});
+
+test('nextRackRow: steps by depth + aisle along the cross axis', () => {
+  const bt = { STD: { w: 3, d: 1 } };
+  // dir N: next row sits depth(1) + aisle(3) = 4 m east
+  assert.deepEqual(nextRackRow({ type: 'STD', dir: 'N', bays: 2, x: -65, y: 10, aisle: 3 }, bt), {
+    x: -61,
+    y: 10,
+  });
+  // dir E: next row sits 4 m below (screen down)
+  assert.deepEqual(nextRackRow({ type: 'STD', dir: 'E', bays: 2, x: 5, y: 20, aisle: 3 }, bt), {
+    x: 5,
+    y: 16,
+  });
+  // two steps → two pitches
+  assert.deepEqual(nextRackRow({ type: 'STD', dir: 'N', bays: 2, x: 0, y: 0, aisle: 3 }, bt, 2), {
+    x: 8,
+    y: 0,
+  });
+});
+
+test('nextRackRow: fallback aisle applies when the rack has none', () => {
+  const bt = { STD: { w: 3, d: 1 } };
+  assert.deepEqual(nextRackRow({ type: 'STD', dir: 'N', bays: 2, x: 0, y: 0 }, bt, 1, 2.5), {
+    x: 3.5,
+    y: 0,
+  });
+});
+
+test('aisleFit: maps a clear width to the equipment tier it suits', () => {
+  assert.deepEqual(aisleFit(3.5), { min: 3.5, label: 'Counterbalance forklift', tone: 'ok' });
+  assert.equal(aisleFit(4.2).label, 'Counterbalance forklift');
+  assert.equal(aisleFit(2.7).label, 'Reach truck');
+  assert.equal(aisleFit(2.5).label, 'Powered pallet truck (BOPT)');
+  assert.equal(aisleFit(2.2).label, 'Powered pallet truck (BOPT)');
+  assert.equal(aisleFit(2.1).label, 'Hand pallet truck / walkway');
+  assert.equal(aisleFit(1.4).label, 'Hand pallet truck / walkway');
+  assert.equal(aisleFit(0.5).tone, 'bad');
+});
+
+test('aisleFit: clamps junk and negative widths to the tightest tier', () => {
+  assert.equal(aisleFit(-5).label, 'Too tight for equipment');
+  assert.equal(aisleFit(NaN).label, 'Too tight for equipment');
+  assert.equal(aisleFit(undefined).label, 'Too tight for equipment');
+});
+
+test('rackBlockPositions: single rows step by depth + aisle on the cross axis', () => {
+  // dir N stacks east (x); dir E stacks toward -y (screen down)
+  assert.deepEqual(rackBlockPositions({ x: 0, y: 0, dir: 'N', depth: 1, aisle: 2, rows: 3 }), [
+    { x: 0, y: 0, twin: false },
+    { x: 3, y: 0, twin: false },
+    { x: 6, y: 0, twin: false },
+  ]);
+  assert.deepEqual(rackBlockPositions({ x: 10, y: 20, dir: 'E', depth: 2, aisle: 1.5, rows: 2 }), [
+    { x: 10, y: 20, twin: false },
+    { x: 10, y: 16.5, twin: false },
+  ]);
+});
+
+test('rackBlockPositions: a twin step is a back-to-back pair plus the aisle', () => {
+  // N: pair shares a spine at x+1; next pair starts 2*depth + aisle = 4 away
+  assert.deepEqual(rackBlockPositions({ x: 0, y: 0, dir: 'N', depth: 1, aisle: 2, rows: 2, twin: true }), [
+    { x: 0, y: 0, twin: false },
+    { x: 1, y: 0, twin: true },
+    { x: 4, y: 0, twin: false },
+    { x: 5, y: 0, twin: true },
+  ]);
+  // E: the mirrored row sits depth below, sharing the spine at y
+  assert.deepEqual(rackBlockPositions({ x: 0, y: 0, dir: 'E', depth: 1, aisle: 2, rows: 2, twin: true }), [
+    { x: 0, y: 0, twin: false },
+    { x: 0, y: -1, twin: true },
+    { x: 0, y: -4, twin: false },
+    { x: 0, y: -5, twin: true },
+  ]);
+});
+
+test('rackBlockPositions: at least one row, at most 500 pairs', () => {
+  assert.equal(rackBlockPositions({ x: 0, y: 0, dir: 'N', depth: 1, aisle: 1, rows: 0 }).length, 1);
+  assert.equal(rackBlockPositions({ x: 0, y: 0, dir: 'N', depth: 1, aisle: 1, rows: 900 }).length, 500);
+});
+
+test('matchBinType: returns the key whose W/D/H match, else null', () => {
+  const bt = { STD: { w: 3, d: 1, h: 6 }, EURO: { w: 1.2, d: 0.8, h: 4 } };
+  assert.equal(matchBinType(bt, { w: 3, d: 1, h: 6 }), 'STD');
+  assert.equal(matchBinType(bt, { w: 1.2, d: 0.8, h: 4 }), 'EURO');
+  assert.equal(matchBinType(bt, { w: 3, d: 1, h: 5 }), null);
+  assert.equal(matchBinType({}, { w: 1, d: 1, h: 1 }), null);
+});
+
+test('rowTokensFor: single letters increment, other bases gain a number', () => {
+  assert.deepEqual(rowTokensFor('A', 4), ['A', 'B', 'C', 'D']);
+  assert.deepEqual(rowTokensFor('A', 1), ['A']);
+  assert.deepEqual(rowTokensFor('ROW1', 3), ['ROW1', 'ROW12', 'ROW13']);
+  assert.deepEqual(rowTokensFor('', 2), ['', '2']);
+  // Wrapping past Z falls back to a numeric suffix instead of a symbol
+  assert.deepEqual(rowTokensFor('Z', 2), ['Z', 'Z2']);
 });

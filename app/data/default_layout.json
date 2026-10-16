@@ -107,6 +107,7 @@
       "color": "#55657d"
     }
   ],
+  "fixtures": [],
   "nodes": [],
   "edges": [],
   "racks": [
@@ -3675,7 +3676,7 @@
     }
   ],
   "editor": {
-    "schemaVersion": 6,
+    "schemaVersion": 7,
     "naming": {
       "separator": "-",
       "bayPad": 2
