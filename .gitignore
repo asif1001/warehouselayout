@@ -8,6 +8,16 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
+# Secrets — never commit these. A Firebase admin key bypasses every Firestore
+# rule, so a leaked one hands over every user's data. The web config in
+# app/js/firebase-config.js is the opposite: public by design, safe to commit.
+*firebase-adminsdk*.json
+*adminsdk*.json
+serviceAccount*.json
+service-account*.json
+.firebase/
+firebase-debug.log
+
 # Node / web tooling
 node_modules/
 npm-debug.log*
