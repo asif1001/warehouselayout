@@ -840,6 +840,37 @@ canvas#c2d:focus {
   gap: 8px;
   margin: 8px 0 6px;
 }
+.cl-me-btns {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+/* One line above the sign-in form, e.g. after "New layout…". */
+.cl-note {
+  margin: 8px 0 6px;
+  padding: 5px 8px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel2);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+/* The saved layout currently open in the editor. */
+.cl-row.current {
+  background: rgba(95, 168, 232, 0.08);
+}
+.cl-badge {
+  font:
+    600 9px/1 Consolas,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sel);
+  border: 1px solid var(--sel);
+  border-radius: 3px;
+  padding: 1px 3px;
+  vertical-align: 1px;
+}
 .cl-who {
   font:
     10.5px Consolas,

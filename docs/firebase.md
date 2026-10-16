@@ -99,13 +99,19 @@ rather than letting Firestore reject it.
 
 ## How it behaves in the app
 
-- **Sign in** — the account button in the toolbar, or _File → Save to cloud…_.
+- **Sign in** — the account button in the toolbar, or any _File →_ cloud entry.
   Google one-click, or email + password (with _Forgot password_).
-- **Save** — give the layout a name and press **Save**. Saving again under the
-  same name overwrites; changing the name saves a copy.
-- **Open** — _File → Open from cloud…_, then **Open** on a row. This replaces
-  the layout you have open.
-- **Rename / Delete** — per row in the same dialog.
+- **Multiple layouts are account-only.** Signed out you keep one local draft;
+  signing in is what unlocks keeping a list of layouts.
+- **New layout…** — creates one and saves it to the account in a single step. It
+  can start **blank**, from the **sample** layout, or as a **copy of the layout on
+  screen**. The account is written _first_, so a failed save leaves the layout you
+  had open untouched.
+- **Save** (`Ctrl+S`) — writes the layout you are editing back to its saved copy.
+  Change the name first and Save makes a copy instead. The open layout is
+  remembered across reloads, so `Ctrl+S` never creates a surprise duplicate.
+- **My layouts…** — everything saved, with the open one marked, plus **Open**,
+  **Rename** and **Delete** per row. Opening replaces what is on screen.
 - Signed out, or with the config left as placeholders, the editor behaves
   exactly as it always has: nothing is fetched from Firebase and your work stays
   in the browser.

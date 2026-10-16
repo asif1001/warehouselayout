@@ -127,11 +127,18 @@ python -m http.server 8000      # then open http://localhost:8000
   recenters on the layout and zooms to fit it.
 - **2D Plan / 3D Preview** toggle in the toolbar.
 - **Export JSON / Import JSON** for sharing or version-controlling a layout.
-- **Cloud saving (optional):** sign in with Google or an email address and keep
-  named layouts in your account, then open them on any device. _File → Save to
-  cloud…_ / _Open from cloud…_, or the account button in the toolbar, open a
-  **My layouts** dialog that saves, opens, renames and deletes. It is off until
-  you add a Firebase config — see [docs/firebase.md](docs/firebase.md).
+- **Cloud saving — several layouts, account required:** keeping more than one
+  layout is an account feature. Sign in with Google or an email address and
+  _File →_ gives you **New layout…**, **My layouts…** and **Save to cloud**
+  (`Ctrl+S`). Saving, opening, renaming and deleting several layouts all happen in
+  the **My layouts** dialog, which shows which layout you are editing and marks
+  the open one in the list. A new layout can start **blank**, from the **sample**,
+  or as a **copy of the layout on screen** — and it is saved to your account
+  _before_ it replaces what you are working on, so a failed save cannot cost you
+  your work. The saved layout you are editing is remembered across reloads, so
+  Save overwrites it rather than making a duplicate. Signed out, the editor works
+  exactly as before on a single local draft. It is off until you add a Firebase
+  config — see [docs/firebase.md](docs/firebase.md).
 
 Your edits autosave to the browser's `localStorage`, so a reload keeps your work.
 To reset back to the shipped default, run this in the browser console (F12) and

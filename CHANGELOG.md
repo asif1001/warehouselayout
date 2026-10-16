@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Multiple layouts per account**: keeping more than one layout is gated behind
+  signing in — it is an account feature, not a local one. _File →_ now offers
+  **New layout…**, **My layouts…** and **Save to cloud** (`Ctrl+S`), and the
+  dialog shows which layout you are editing, marks the open one in the list, and
+  no longer needs a separate "open" entry. **New layout…** creates one that
+  starts **blank**, from the **sample**, or as a **copy of the layout on screen**;
+  it is written to the account _before_ it replaces the working copy, so a refused
+  or failed save cannot lose the layout you had open (verified against the
+  unpublished-rules case). The saved layout being edited is remembered in
+  `localStorage` across reloads, so `Save`/`Ctrl+S` overwrites it instead of
+  silently creating duplicates. New pure `blankLayout()` in `app/js/store.js`,
+  unit-tested, and `store.js` also owns the per-browser cloud link.
 - **Cloud saving (optional, off by default)**: sign in with Google or an email
   address and keep named layouts in a Firebase account, then open them on any
   device. _File → Save to cloud…_ / _Open from cloud…_ and the toolbar account

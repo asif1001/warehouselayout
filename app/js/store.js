@@ -14,6 +14,55 @@ import { fromDbConnect, toDbConnect } from './dbconnect.js';
 export const LS_KEY = 'warehouse_layout_editor_v1';
 const DEFAULT_LAYOUT_URL = 'data/default_layout.json';
 
+// Which saved cloud layout the working draft belongs to, so a reload keeps
+// overwriting it instead of silently creating a duplicate. Per-browser state,
+// deliberately not part of the layout document itself.
+export const CLOUD_LINK_KEY = 'warehouse_layout_editor_cloud_v1';
+
+export function saveCloudLink(link) {
+  try {
+    localStorage.setItem(CLOUD_LINK_KEY, JSON.stringify({ id: link.id, name: link.name }));
+  } catch {
+    /* a full quota must not break editing */
+  }
+}
+
+export function loadCloudLink() {
+  try {
+    const raw = localStorage.getItem(CLOUD_LINK_KEY);
+    if (!raw) return null;
+    const link = JSON.parse(raw);
+    return link && typeof link.id === 'string' && link.id ? { id: link.id, name: link.name ?? null } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearCloudLink() {
+  try {
+    localStorage.removeItem(CLOUD_LINK_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+// A fresh, empty layout: keeps the shipped defaults' structure (meta, settings,
+// bin types, naming) but none of its content, so a new layout still exports and
+// validates like any other.
+export function blankLayout(defaults) {
+  const out = JSON.parse(JSON.stringify(defaults));
+  out.zones = [];
+  out.racks = [];
+  out.nodes = [];
+  out.edges = [];
+  out.fixtures = [];
+  out.texts = [];
+  out.labelOverrides = {};
+  out.binOverrides = {};
+  out.bg = null;
+  return out;
+}
+
 export async function fetchDefaultLayout() {
   const res = await fetch(DEFAULT_LAYOUT_URL, { cache: 'no-store' });
   if (!res.ok) {

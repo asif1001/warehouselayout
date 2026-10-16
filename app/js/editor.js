@@ -50,6 +50,7 @@ import {
 } from './fixtures.js';
 import { drawSymbol } from './symbols.js';
 import * as cloud from './cloud.js';
+import { blankLayout, clearCloudLink, loadCloudLink, saveCloudLink } from './store.js';
 import { cleanName, formatBytes, formatWhen, friendlyError, nameError, MAX_NAME } from './cloudDocs.js';
 
 let state;
@@ -117,6 +118,8 @@ let cloudUser = null;
 let cloudList = [];
 let cloudError = null; // set when the SDK or sign-in state could not be reached
 let cloudBusy = false;
+let cloudNew = false; // the dialog is showing the "new layout" form
+let cloudNote = null; // one line shown above the sign-in form, e.g. after "New layout…"
 
 // World-space boxes of the automatic labels painted by the last draw(). Recorded
 // during draw() (like drawnBounds) so clicking a label can never drift from what
@@ -2507,6 +2510,38 @@ function exportLayout() {
   flagSaved('exported');
 }
 
+// Install a ready editor-native layout as the working copy: backfill it from the
+// shipped defaults, normalize the editor-only blocks, repaint, and start a new
+// undo timeline. `link` ties it to a saved cloud layout.
+async function installLayout(next, { link = null } = {}) {
+  const defaults = await fetchDefaultLayout();
+  state = Object.assign(JSON.parse(JSON.stringify(defaults)), next);
+  state.labelStyle = normalizeLabelStyle(state.labelStyle);
+  state.texts = normalizeTexts(state.texts);
+  state.labelOverrides = normalizeLabelOverrides(state.labelOverrides);
+  state.fixtures = normalizeFixtures(state.fixtures);
+  sel = null;
+  selBay = null;
+  if (link) linkCloud(link.id, link.name);
+  else linkCloud(null, null);
+  loadBgImage();
+  renderBinTypes();
+  renderProps();
+  updateBgInfo();
+  save();
+  draw();
+  updateCloudChrome();
+}
+
+// Remember which saved cloud layout this working copy is, in memory and across
+// reloads.
+function linkCloud(id, name) {
+  cloudDocId = id || null;
+  cloudDocName = name || null;
+  if (id) saveCloudLink({ id, name });
+  else clearCloudLink();
+}
+
 // Swap the working layout for a freshly loaded one, backfilled from the shipped
 // defaults. Shared by Import JSON and "Open from cloud".
 async function adoptLayout(dbData) {
@@ -2518,22 +2553,7 @@ async function adoptLayout(dbData) {
   } catch (err) {
     throw new Error('Could not load that layout: ' + err.message);
   }
-  const defaults = await fetchDefaultLayout();
-  state = Object.assign(JSON.parse(JSON.stringify(defaults)), parsed);
-  state.labelStyle = normalizeLabelStyle(state.labelStyle);
-  state.texts = normalizeTexts(state.texts);
-  state.labelOverrides = normalizeLabelOverrides(state.labelOverrides);
-  state.fixtures = normalizeFixtures(state.fixtures);
-  sel = null;
-  cloudDocId = null; // the working layout is this file now, not the one we had open
-  cloudDocName = null;
-  loadBgImage();
-  renderBinTypes();
-  renderProps();
-  updateBgInfo();
-  save();
-  draw();
-  updateCloudChrome();
+  await installLayout(parsed);
 }
 
 async function importLayoutFile(file) {
@@ -2588,12 +2608,26 @@ function updateCloudChrome() {
   }
 }
 
-function openCloudModal() {
+function openCloudModal(note) {
   const m = cloudModalEl();
   if (!m) return;
+  const wantsNew = note === 'new';
+  cloudNote = wantsNew && !cloudUser ? 'Sign in to create and save layouts to your account.' : null;
+  cloudNew = wantsNew && !!cloudUser;
   m.hidden = false;
   renderCloudModal();
-  if (cloudUser) refreshCloudList().catch((err) => cloudSay(friendlyError(err), true));
+  const focus = () => {
+    if (!wantsNew) return;
+    const el = document.getElementById('cl_new_name') || document.getElementById('cl_email');
+    if (el) el.focus();
+  };
+  if (cloudUser) {
+    refreshCloudList()
+      .then(focus)
+      .catch((err) => cloudSay(friendlyError(err), true));
+  } else {
+    focus();
+  }
 }
 
 function closeCloudModal() {
@@ -2601,6 +2635,8 @@ function closeCloudModal() {
   if (!m) return;
   m.hidden = true;
   m.innerHTML = '';
+  cloudNew = false;
+  cloudNote = null;
 }
 
 function cloudSay(text, bad) {
@@ -2614,8 +2650,17 @@ function defaultCloudName() {
   return cleanName(state?.meta?.name) || 'Warehouse layout';
 }
 
+// "Layout 1", "Layout 2"… skipping names already taken.
+function nextLayoutName() {
+  const taken = new Set(cloudList.map((it) => it.name.toLowerCase()));
+  let i = 1;
+  while (taken.has(`layout ${i}`)) i++;
+  return `Layout ${i}`;
+}
+
 function signInHtml() {
   return `
+    ${cloudNote ? `<div class="cl-note">${esc(cloudNote)}</div>` : ''}
     <div class="hintline">Sign in to keep layouts in your account and open them on any
       device. Without an account the editor works exactly as before — your work stays
       cached in this browser.</div>
@@ -2635,13 +2680,14 @@ function signInHtml() {
 
 function listRowsHtml() {
   if (!cloudList.length) {
-    return `<div class="hintline">Nothing saved yet — name the layout above and press Save.</div>`;
+    return `<div class="hintline">Nothing saved yet — press <strong>New layout</strong>, or
+      name the layout above and press Save.</div>`;
   }
   return cloudList
     .map(
-      (it) => `<div class="cl-row">
+      (it) => `<div class="cl-row${cloudDocId === it.id ? ' current' : ''}">
         <div class="cl-row-main">
-          <div class="cl-row-name">${esc(it.name)}</div>
+          <div class="cl-row-name">${esc(it.name)}${cloudDocId === it.id ? ' <span class="cl-badge">open</span>' : ''}</div>
           <div class="cl-row-meta">${formatWhen(it.updatedAt)} &middot; ${formatBytes(it.bytes)}</div>
         </div>
         <div class="cl-row-btns">
@@ -2655,26 +2701,53 @@ function listRowsHtml() {
 }
 
 function panelHtml() {
+  if (cloudNew) {
+    return `
+      <div class="cl-me">
+        <span class="cl-who">${esc(cloudUser.email || cloudUser.displayName || 'Signed in')}</span>
+        <button class="btn small" id="cl_signout">Sign out</button>
+      </div>
+      <div class="rk-sec">New layout</div>
+      <div class="field"><label>Name</label>
+        <input type="text" id="cl_new_name" maxlength="${MAX_NAME}" value="${esc(nextLayoutName())}"></div>
+      <div class="field"><label>Start from</label>
+        <select id="cl_new_from">
+          <option value="blank">A blank warehouse</option>
+          <option value="sample">The sample layout</option>
+          <option value="copy">A copy of the layout on screen</option>
+        </select></div>
+      <div class="hintline">It is saved to your account straight away, and becomes the layout
+        you are editing.</div>
+      <div class="btnrow">
+        <button class="btn" id="cl_new_go">Create &amp; save</button>
+        <button class="btn small" id="cl_new_cancel">Cancel</button>
+      </div>`;
+  }
   const editing = cloudDocId
     ? `<div class="hintline">Editing <strong>${esc(cloudDocName || '')}</strong> — Save
-       overwrites it; change the name to save a copy.</div>`
-    : `<div class="hintline">This layout is not in your account yet.</div>`;
+       overwrites it; change the name to save a copy instead.</div>`
+    : `<div class="hintline">This layout is not in your account yet — give it a name and
+       Save, or press <strong>New layout</strong> to start another.</div>`;
   return `
     <div class="cl-me">
       <span class="cl-who">${esc(cloudUser.email || cloudUser.displayName || 'Signed in')}</span>
-      <button class="btn small" id="cl_signout">Sign out</button>
+      <span class="cl-me-btns">
+        <button class="btn small" id="cl_new">New layout…</button>
+        <button class="btn small" id="cl_signout">Sign out</button>
+      </span>
     </div>
     <div class="field"><label>Name</label>
       <input type="text" id="cl_name" maxlength="${MAX_NAME}" value="${esc(cloudDocName || defaultCloudName())}">
       <button class="btn" id="cl_save">Save</button></div>
     ${editing}
-    <div class="grp">Saved layouts</div>
+    <div class="grp">Saved layouts (${cloudList.length})</div>
     <div class="cl-list" id="cl_list">${listRowsHtml()}</div>`;
 }
 
 function renderCloudModal() {
   const m = cloudModalEl();
   if (!m) return;
+  if (!cloudUser) cloudNew = false;
   const body = !cloud.cloudConfigured()
     ? `<div class="hintline">${CLOUD_HELP}</div>`
     : cloudUser
@@ -2732,8 +2805,40 @@ async function emailAuth(mode) {
   cloudSay(`${mode === 'signup' ? 'Account created' : 'Signed in'} — ${user.email ?? email}.`);
 }
 
-async function saveToCloud() {
-  const name = cleanName(document.getElementById('cl_name')?.value);
+// Create a layout and save it to the account in one step, then make it the one
+// you are editing.
+async function createNewLayout() {
+  const name = cleanName(document.getElementById('cl_new_name')?.value);
+  const from = document.getElementById('cl_new_from')?.value || 'blank';
+  const problem = nameError(
+    name,
+    cloudList.map((it) => it.name),
+  );
+  if (problem) {
+    cloudSay(problem, true);
+    return;
+  }
+  const defaults = await fetchDefaultLayout();
+  const next =
+    from === 'copy'
+      ? JSON.parse(JSON.stringify(state))
+      : from === 'sample'
+        ? defaults
+        : blankLayout(defaults);
+  // Save first: the working copy is only replaced once the account has it, so a
+  // refused or failed write can never cost the user what they had open.
+  const id = await cloud.saveLayout({ id: null, name, state: next });
+  await installLayout(next); // installLayout() clears the link; we set it below
+  linkCloud(id, name);
+  cloudNew = false;
+  flagSaved('layout created');
+  await refreshCloudList();
+  cloudSay(`Created “${name}” and saved it to your account.`);
+}
+
+// `nameArg` lets a save run without the dialog open (Ctrl+S on a linked layout).
+async function saveToCloud(nameArg) {
+  const name = cleanName(nameArg ?? document.getElementById('cl_name')?.value ?? cloudDocName);
   // Updating the layout we opened is fine even though its name is "taken".
   const mine = cloudDocId ? cleanName(cloudDocName).toLowerCase() : null;
   const taken = cloudList.map((it) => it.name).filter((n) => cleanName(n).toLowerCase() !== mine);
@@ -2748,11 +2853,27 @@ async function saveToCloud() {
     if (clash && !confirm(`“${clash.name}” is already saved. Overwrite it?`)) return;
     if (clash) id = clash.id;
   }
-  cloudDocId = await cloud.saveLayout({ id, name, state });
-  cloudDocName = name;
+  const written = await cloud.saveLayout({ id, name, state });
+  linkCloud(written, name);
   flagSaved('saved to cloud');
   await refreshCloudList();
   cloudSay(`Saved “${name}”.`);
+}
+
+// Ctrl+S / "Save to cloud": a linked layout saves straight away, anything else
+// needs a name so the dialog opens on the name field.
+function saveToCloudQuick() {
+  if (!cloud.cloudConfigured()) {
+    alert(CLOUD_HELP);
+    return;
+  }
+  if (!cloudUser) {
+    openCloudModal();
+    cloudSay('Sign in to save to your account.', true);
+    return;
+  }
+  if (cloudDocId) cloudRun(() => saveToCloud(cloudDocName));
+  else openCloudModal();
 }
 
 async function openFromCloud(id) {
@@ -2760,9 +2881,8 @@ async function openFromCloud(id) {
   const label = item ? `“${item.name}”` : 'that layout';
   if (!confirm(`Open ${label}? It replaces the layout you have open now.`)) return;
   const data = await cloud.loadLayout(id);
-  await adoptLayout(data);
-  cloudDocId = id;
-  cloudDocName = item ? item.name : cleanName(data?.meta?.name) || null;
+  await adoptLayout(data); // adoptLayout() clears the link
+  linkCloud(id, item ? item.name : cleanName(data?.meta?.name) || null);
   closeCloudModal();
   flagSaved('opened from cloud');
 }
@@ -2791,10 +2911,7 @@ async function deleteCloudLayout(id) {
   const label = item ? `“${item.name}”` : 'this layout';
   if (!confirm(`Delete ${label} from your account? This cannot be undone.`)) return;
   await cloud.deleteLayout(id);
-  if (cloudDocId === id) {
-    cloudDocId = null;
-    cloudDocName = null;
-  }
+  if (cloudDocId === id) linkCloud(null, null);
   await refreshCloudList();
   cloudSay('Deleted.');
 }
@@ -2833,11 +2950,25 @@ function wireCloudModal() {
   on('cl_signout', 'click', () =>
     cloudRun(async () => {
       await cloud.signOutNow();
-      cloudDocId = null;
-      cloudDocName = null;
+      cloudNew = false;
+      linkCloud(null, null);
     }),
   );
   on('cl_save', 'click', () => cloudRun(saveToCloud));
+  on('cl_new', 'click', () => {
+    cloudNew = true;
+    renderCloudModal();
+    const el = document.getElementById('cl_new_name');
+    if (el) el.focus();
+  });
+  on('cl_new_cancel', 'click', () => {
+    cloudNew = false;
+    renderCloudModal();
+  });
+  on('cl_new_go', 'click', () => cloudRun(createNewLayout));
+  on('cl_new_name', 'keydown', (e) => {
+    if (e.key === 'Enter') cloudRun(createNewLayout);
+  });
   on('cl_name', 'keydown', (e) => {
     if (e.key === 'Enter') cloudRun(saveToCloud);
   });
@@ -3415,6 +3546,11 @@ function wireKeyboard() {
           selectAllRacks();
           return;
         }
+        if (ck === 's') {
+          e.preventDefault();
+          saveToCloudQuick();
+          return;
+        }
       }
       return;
     }
@@ -3644,17 +3780,18 @@ function wirePanels() {
     e.target.value = '';
   };
 
-  // The account button and both File → cloud entries open the same dialog.
-  const openCloud = () => {
+  // The account button and every File → cloud entry lead to the same dialog.
+  const openCloud = (note) => {
     if (!cloud.cloudConfigured()) {
       alert(CLOUD_HELP);
       return;
     }
-    openCloudModal();
+    openCloudModal(note);
   };
-  document.getElementById('authBtn').onclick = openCloud;
-  document.getElementById('cloudSaveBtn').onclick = openCloud;
-  document.getElementById('cloudOpenBtn').onclick = openCloud;
+  document.getElementById('authBtn').onclick = () => openCloud();
+  document.getElementById('cloudNewBtn').onclick = () => openCloud('new');
+  document.getElementById('cloudOpenBtn').onclick = () => openCloud();
+  document.getElementById('cloudSaveBtn').onclick = saveToCloudQuick;
 }
 
 // ---------- entry point ----------
@@ -3666,6 +3803,12 @@ export function initEditor(layout) {
   state.labelOverrides = normalizeLabelOverrides(state.labelOverrides);
   state.fixtures = normalizeFixtures(state.fixtures);
   history = createHistory(state); // the loaded layout is the first undo step
+
+  // Restore which saved layout this draft belongs to, so a reload keeps
+  // overwriting it rather than making a duplicate.
+  const link = loadCloudLink();
+  cloudDocId = link ? link.id : null;
+  cloudDocName = link ? link.name : null;
 
   cv = document.getElementById('c2d');
   ctx = cv.getContext('2d');
