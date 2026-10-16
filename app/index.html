@@ -65,9 +65,17 @@
           <div class="menu-list">
             <button class="menu-item" id="exportBtn">Export JSON</button>
             <button class="menu-item" id="importBtn">Import JSON</button>
+            <div class="menu-sep">Cloud</div>
+            <button class="menu-item" id="cloudSaveBtn" title="Save this layout to your account">
+              Save to cloud…
+            </button>
+            <button class="menu-item" id="cloudOpenBtn" title="Open a layout saved to your account">
+              Open from cloud…
+            </button>
           </div>
         </div>
         <input type="file" id="importFile" accept=".json" style="display: none" />
+        <button class="btn" id="authBtn" title="Sign in to save your layouts to your account">Sign in</button>
         <div class="spacer"></div>
         <span id="savedFlag"></span>
       </div>
@@ -186,6 +194,7 @@
       </div>
 
       <div id="rackModal" class="modal" hidden></div>
+      <div id="cloudModal" class="modal" hidden></div>
     </div>
 
     <div id="bootError"></div>

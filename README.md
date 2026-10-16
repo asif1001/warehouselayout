@@ -2,7 +2,8 @@
 
 A browser-based editor for warehouse floor layouts — zones, rack rows, path
 nodes/edges, and a calibrated background tracing image — with a live 2D plan and
-a 3D preview. Layouts export to JSON and can be stored in Postgres.
+a 3D preview. Layouts export to JSON, can be saved to a Firebase account, and
+can be stored in Postgres.
 
 The app is a static client (HTML/CSS/ES modules + a vendored copy of three.js).
 Python is used for a tiny dev server and the optional database layer.
@@ -126,6 +127,11 @@ python -m http.server 8000      # then open http://localhost:8000
   recenters on the layout and zooms to fit it.
 - **2D Plan / 3D Preview** toggle in the toolbar.
 - **Export JSON / Import JSON** for sharing or version-controlling a layout.
+- **Cloud saving (optional):** sign in with Google or an email address and keep
+  named layouts in your account, then open them on any device. _File → Save to
+  cloud…_ / _Open from cloud…_, or the account button in the toolbar, open a
+  **My layouts** dialog that saves, opens, renames and deletes. It is off until
+  you add a Firebase config — see [docs/firebase.md](docs/firebase.md).
 
 Your edits autosave to the browser's `localStorage`, so a reload keeps your work.
 To reset back to the shipped default, run this in the browser console (F12) and
@@ -228,6 +234,9 @@ warehouse-layout-editor/
 │   │   ├── symbols.js        # 2D plan symbols for those elements
 │   │   ├── models3d.js       # 3D shape of each element (parts, in metres)
 │   │   ├── preview3d.js      # 3D preview
+│   │   ├── cloud.js          # Firebase auth + Firestore (loaded on demand)
+│   │   ├── cloudDocs.js      # pure: the shape of a saved layout, naming rules
+│   │   ├── firebase-config.js # paste your Firebase web config here
 │   │   ├── store.js          # localStorage draft + default fetch
 │   │   ├── migrations.js     # schema migrations
 │   │   ├── schema.js         # schema version + validator
@@ -241,8 +250,10 @@ warehouse-layout-editor/
 │   ├── config.py             # DATABASE_URL
 │   └── seed.py               # python -m server.seed
 ├── schema/0001_init.sql      # Postgres DDL
+├── firestore.rules           # Firebase rules: each user sees only their own
+├── firebase.json             # firebase deploy --only firestore:rules
 ├── tests/                    # pytest + node --test
-├── docs/postgres.md
+├── docs/postgres.md, docs/firebase.md
 ├── VERSION, CHANGELOG.md, LICENSE, .gitignore
 └── pyproject.toml, package.json, eslint.config.js, .prettierrc.json
 ```
@@ -270,8 +281,8 @@ CI runs all of the above on every push and pull request
 
 The JS unit tests cover the pure modules (`geometry.js`, `migrations.js`,
 `dbconnect.js`, `labels.js`, `history.js`, `fixtures.js`, `symbols.js`,
-`models3d.js`); the editor and the 3D rendering itself are exercised by hand in
-the browser.
+`models3d.js`, `cloudDocs.js`); the editor and the 3D rendering itself are
+exercised by hand in the browser.
 
 ---
 

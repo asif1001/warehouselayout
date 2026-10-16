@@ -1,0 +1,50 @@
+rules_version = '2';
+
+// Warehouse Layout Editor — Firestore security rules.
+//
+// A layout is two documents that share one id:
+//
+//   users/{uid}/layouts/{id}      { name, schemaVersion, bytes, createdAt, updatedAt }
+//   users/{uid}/layoutData/{id}   { data }
+//
+// Every signed-in user may read and write only their own; nobody can see anyone
+// else's layouts, and nobody can write outside their own uid.
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// (or paste it into Firebase console → Firestore Database → Rules → Publish).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function owns(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read, write: if owns(uid);
+
+      // Metadata. `request.resource` is null on delete, so the shape checks only
+      // apply to writes that carry a document.
+      match /layouts/{id} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60;
+        allow delete: if owns(uid);
+      }
+
+      // The layout payload itself.
+      match /layoutData/{id} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && request.resource.data.data is map;
+        allow delete: if owns(uid);
+      }
+    }
+
+    // Nothing else is reachable.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Cloud saving (optional, off by default)**: sign in with Google or an email
+  address and keep named layouts in a Firebase account, then open them on any
+  device. _File → Save to cloud…_ / _Open from cloud…_ and the toolbar account
+  button all open a **My layouts** dialog that can save, open, rename and delete.
+  A saved layout is two Firestore documents sharing one id —
+  `users/{uid}/layouts/{id}` for the metadata (name, size, timestamps) and
+  `users/{uid}/layoutData/{id}` for the payload — so listing layouts never
+  downloads the plans. The payload is the same `db_connect` JSON that Export
+  JSON writes, minus the derived `bins` array (`fromDbConnect` never reads them),
+  which keeps a large warehouse well inside Firestore's 1 MiB document limit; a
+  save over 900 KB is refused with a readable message. `firestore.rules` scopes
+  every read and write to the signed-in user's own uid. The Firebase SDK is
+  fetched from the CDN only when a cloud control is used, so an unconfigured
+  build behaves exactly like the local-only editor and never touches the
+  network. New pure module `app/js/cloudDocs.js` (`cloudDoc`, `nameError`,
+  `layoutFromDoc`, `friendlyError`), unit-tested; `app/js/cloud.js` holds the
+  Firebase wiring and `app/js/firebase-config.js` the paste-your-config
+  placeholder. Setup guide in [docs/firebase.md](docs/firebase.md).
 - **Multi-selection of racks and elements**: `Shift`+click adds or removes one
   element, `Shift`+drag sweeps a rubber band over the plan (picking up rack rows,
   placed elements and text while ignoring the floor zones underneath) and

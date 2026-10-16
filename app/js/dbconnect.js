@@ -37,7 +37,10 @@ const DEFAULT_BIN_LABEL_FORMAT = {
 
 // Convert editor-native state to the db_connect file format (v5).
 // Generates the bins array. Pass-through sections are written back unchanged.
-export function toDbConnect(state) {
+// `includeBins: false` skips the derived bins (recomputed on load, and by far
+// the largest part of the document) — used for cloud saves, which have a size
+// limit to respect.
+export function toDbConnect(state, { includeBins = true } = {}) {
   const { schemaVersion, naming, binOverrides, categories, vehicles, dwell_times, ...rest } = state;
 
   // The `editor` block carries everything that is editor-specific rather than
@@ -75,12 +78,13 @@ export function toDbConnect(state) {
     distance_m: edgeLength(state.nodes ?? [], e),
   }));
 
-  const rawBins = expandBins(state);
-  const bins = rawBins.map(({ bin_label, override_key, ...b }) => {
-    void bin_label;
-    void override_key;
-    return b;
-  });
+  const bins = includeBins
+    ? expandBins(state).map(({ bin_label, override_key, ...b }) => {
+        void bin_label;
+        void override_key;
+        return b;
+      })
+    : [];
 
   return {
     meta,

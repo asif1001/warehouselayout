@@ -49,6 +49,8 @@ import {
   FIXTURE_GROUPS,
 } from './fixtures.js';
 import { drawSymbol } from './symbols.js';
+import * as cloud from './cloud.js';
+import { cleanName, formatBytes, formatWhen, friendlyError, nameError, MAX_NAME } from './cloudDocs.js';
 
 let state;
 let preview;
@@ -105,6 +107,16 @@ let fixtureResize = null;
 // The fixture kind the Building / Warehouse menu last armed, used when the
 // Fixture tool places a new object.
 let fixtureKind = 'door';
+
+// Cloud (Firebase) state. `cloudDocId` is the saved layout this working copy
+// came from or last wrote to — null means "not saved to the account yet".
+// See docs/firebase.md.
+let cloudDocId = null;
+let cloudDocName = null;
+let cloudUser = null;
+let cloudList = [];
+let cloudError = null; // set when the SDK or sign-in state could not be reached
+let cloudBusy = false;
 
 // World-space boxes of the automatic labels painted by the last draw(). Recorded
 // during draw() (like drawnBounds) so clicking a label can never drift from what
@@ -2495,6 +2507,35 @@ function exportLayout() {
   flagSaved('exported');
 }
 
+// Swap the working layout for a freshly loaded one, backfilled from the shipped
+// defaults. Shared by Import JSON and "Open from cloud".
+async function adoptLayout(dbData) {
+  const clean = { ...dbData };
+  delete clean.bins; // derived — regenerated on next save; binOverrides is NOT deleted (user data)
+  let parsed;
+  try {
+    parsed = fromDbConnect(migrate(clean));
+  } catch (err) {
+    throw new Error('Could not load that layout: ' + err.message);
+  }
+  const defaults = await fetchDefaultLayout();
+  state = Object.assign(JSON.parse(JSON.stringify(defaults)), parsed);
+  state.labelStyle = normalizeLabelStyle(state.labelStyle);
+  state.texts = normalizeTexts(state.texts);
+  state.labelOverrides = normalizeLabelOverrides(state.labelOverrides);
+  state.fixtures = normalizeFixtures(state.fixtures);
+  sel = null;
+  cloudDocId = null; // the working layout is this file now, not the one we had open
+  cloudDocName = null;
+  loadBgImage();
+  renderBinTypes();
+  renderProps();
+  updateBgInfo();
+  save();
+  draw();
+  updateCloudChrome();
+}
+
 async function importLayoutFile(file) {
   const text = await file.text();
   let data;
@@ -2504,27 +2545,349 @@ async function importLayoutFile(file) {
     alert('Could not parse that file: ' + err.message);
     return;
   }
-  delete data.bins; // derived — regenerate on next save; binOverrides is NOT deleted (user data)
   try {
-    data = fromDbConnect(migrate(data));
+    await adoptLayout(data);
   } catch (err) {
-    alert('Could not load that layout: ' + err.message);
+    alert(err.message);
+  }
+}
+
+// ---------- cloud (Firebase) ----------
+// Sign in, then keep layouts in the account. The Firebase SDK itself is only
+// fetched when a cloud control is actually used, so an unconfigured build — or
+// one with no network — behaves exactly like the local-only editor.
+// See docs/firebase.md.
+
+const CLOUD_HELP =
+  'Cloud saving is not set up yet. Add your Firebase config to app/js/firebase-config.js — see docs/firebase.md.';
+
+function cloudModalEl() {
+  return document.getElementById('cloudModal');
+}
+
+function cloudModalOpen() {
+  const m = cloudModalEl();
+  return !!m && !m.hidden;
+}
+
+// The toolbar button is both the account chip and the way into the modal.
+function updateCloudChrome() {
+  const btn = document.getElementById('authBtn');
+  if (!btn) return;
+  const who = cloudUser ? cloudUser.displayName || cloudUser.email || 'Account' : '';
+  btn.classList.toggle('signed-in', !!cloudUser);
+  if (!cloud.cloudConfigured()) {
+    btn.textContent = 'Sign in';
+    btn.title = CLOUD_HELP;
+  } else if (cloudUser) {
+    btn.textContent = who.length > 20 ? who.slice(0, 19) + '…' : who;
+    btn.title = `${cloudUser.email ?? who} — click for your saved layouts`;
+  } else {
+    btn.textContent = 'Sign in';
+    btn.title = 'Sign in to save your layouts to your account';
+  }
+}
+
+function openCloudModal() {
+  const m = cloudModalEl();
+  if (!m) return;
+  m.hidden = false;
+  renderCloudModal();
+  if (cloudUser) refreshCloudList().catch((err) => cloudSay(friendlyError(err), true));
+}
+
+function closeCloudModal() {
+  const m = cloudModalEl();
+  if (!m) return;
+  m.hidden = true;
+  m.innerHTML = '';
+}
+
+function cloudSay(text, bad) {
+  const el = document.getElementById('cl_status');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('cl-ok', !!text && !bad);
+}
+
+function defaultCloudName() {
+  return cleanName(state?.meta?.name) || 'Warehouse layout';
+}
+
+function signInHtml() {
+  return `
+    <div class="hintline">Sign in to keep layouts in your account and open them on any
+      device. Without an account the editor works exactly as before — your work stays
+      cached in this browser.</div>
+    <div class="btnrow"><button class="btn" id="cl_google">Continue with Google</button></div>
+    <div class="grp">or use an email</div>
+    <div class="field"><label>Email</label>
+      <input type="email" id="cl_email" autocomplete="email" placeholder="you@example.com"></div>
+    <div class="field"><label>Password</label>
+      <input type="password" id="cl_pass" autocomplete="current-password"
+        placeholder="6+ characters"></div>
+    <div class="btnrow">
+      <button class="btn" id="cl_signin">Sign in</button>
+      <button class="btn" id="cl_signup">Create account</button>
+      <button class="btn small" id="cl_forgot">Forgot password</button>
+    </div>`;
+}
+
+function listRowsHtml() {
+  if (!cloudList.length) {
+    return `<div class="hintline">Nothing saved yet — name the layout above and press Save.</div>`;
+  }
+  return cloudList
+    .map(
+      (it) => `<div class="cl-row">
+        <div class="cl-row-main">
+          <div class="cl-row-name">${esc(it.name)}</div>
+          <div class="cl-row-meta">${formatWhen(it.updatedAt)} &middot; ${formatBytes(it.bytes)}</div>
+        </div>
+        <div class="cl-row-btns">
+          <button class="btn small" data-cl-open="${esc(it.id)}">Open</button>
+          <button class="btn small" data-cl-rename="${esc(it.id)}">Rename</button>
+          <button class="btn small del" data-cl-del="${esc(it.id)}">Delete</button>
+        </div>
+      </div>`,
+    )
+    .join('');
+}
+
+function panelHtml() {
+  const editing = cloudDocId
+    ? `<div class="hintline">Editing <strong>${esc(cloudDocName || '')}</strong> — Save
+       overwrites it; change the name to save a copy.</div>`
+    : `<div class="hintline">This layout is not in your account yet.</div>`;
+  return `
+    <div class="cl-me">
+      <span class="cl-who">${esc(cloudUser.email || cloudUser.displayName || 'Signed in')}</span>
+      <button class="btn small" id="cl_signout">Sign out</button>
+    </div>
+    <div class="field"><label>Name</label>
+      <input type="text" id="cl_name" maxlength="${MAX_NAME}" value="${esc(cloudDocName || defaultCloudName())}">
+      <button class="btn" id="cl_save">Save</button></div>
+    ${editing}
+    <div class="grp">Saved layouts</div>
+    <div class="cl-list" id="cl_list">${listRowsHtml()}</div>`;
+}
+
+function renderCloudModal() {
+  const m = cloudModalEl();
+  if (!m) return;
+  const body = !cloud.cloudConfigured()
+    ? `<div class="hintline">${CLOUD_HELP}</div>`
+    : cloudUser
+      ? panelHtml()
+      : signInHtml();
+  const warn = cloudError ? `<div class="rk-err cl-open-err">${esc(cloudError)}</div>` : '';
+  m.innerHTML = `
+    <div class="modal-card cl-card" role="dialog" aria-modal="true" aria-label="My layouts">
+      <div class="modal-head">
+        <h2>My layouts</h2>
+        <button class="modal-x" id="cl_close_x" title="Close (Esc)">×</button>
+      </div>
+      <div class="modal-body">
+        ${warn}
+        ${body}
+        <div class="rk-err" id="cl_status"></div>
+      </div>
+    </div>`;
+  wireCloudModal();
+  updateCloudChrome();
+}
+
+// Run one cloud action: failures land in the status line rather than vanishing.
+async function cloudRun(fn) {
+  if (cloudBusy) return;
+  cloudBusy = true;
+  try {
+    await fn();
+  } catch (err) {
+    cloudSay(friendlyError(err), true);
+  } finally {
+    cloudBusy = false;
+  }
+}
+
+async function refreshCloudList() {
+  if (!cloudUser) {
+    cloudList = [];
+    if (cloudModalOpen()) renderCloudModal();
     return;
   }
-  // Backfill any missing top-level keys from the shipped default.
-  const defaults = await fetchDefaultLayout();
-  state = Object.assign(JSON.parse(JSON.stringify(defaults)), data);
-  state.labelStyle = normalizeLabelStyle(state.labelStyle);
-  state.texts = normalizeTexts(state.texts);
-  state.labelOverrides = normalizeLabelOverrides(state.labelOverrides);
-  state.fixtures = normalizeFixtures(state.fixtures);
-  sel = null;
-  loadBgImage();
-  renderBinTypes();
-  renderProps();
-  updateBgInfo();
-  save();
-  draw();
+  cloudList = await cloud.listLayouts();
+  if (cloudModalOpen()) renderCloudModal();
+}
+
+async function emailAuth(mode) {
+  const email = (document.getElementById('cl_email')?.value || '').trim();
+  const pass = document.getElementById('cl_pass')?.value || '';
+  if (!email) {
+    cloudSay('Enter your email address.', true);
+    return;
+  }
+  const user =
+    mode === 'signup' ? await cloud.signUpWithEmail(email, pass) : await cloud.signInWithEmail(email, pass);
+  cloudSay(`${mode === 'signup' ? 'Account created' : 'Signed in'} — ${user.email ?? email}.`);
+}
+
+async function saveToCloud() {
+  const name = cleanName(document.getElementById('cl_name')?.value);
+  // Updating the layout we opened is fine even though its name is "taken".
+  const mine = cloudDocId ? cleanName(cloudDocName).toLowerCase() : null;
+  const taken = cloudList.map((it) => it.name).filter((n) => cleanName(n).toLowerCase() !== mine);
+  const problem = nameError(name, taken);
+  if (problem) {
+    cloudSay(problem, true);
+    return;
+  }
+  let id = cloudDocId;
+  if (!id) {
+    const clash = cloudList.find((it) => it.name.toLowerCase() === name.toLowerCase());
+    if (clash && !confirm(`“${clash.name}” is already saved. Overwrite it?`)) return;
+    if (clash) id = clash.id;
+  }
+  cloudDocId = await cloud.saveLayout({ id, name, state });
+  cloudDocName = name;
+  flagSaved('saved to cloud');
+  await refreshCloudList();
+  cloudSay(`Saved “${name}”.`);
+}
+
+async function openFromCloud(id) {
+  const item = cloudList.find((it) => it.id === id);
+  const label = item ? `“${item.name}”` : 'that layout';
+  if (!confirm(`Open ${label}? It replaces the layout you have open now.`)) return;
+  const data = await cloud.loadLayout(id);
+  await adoptLayout(data);
+  cloudDocId = id;
+  cloudDocName = item ? item.name : cleanName(data?.meta?.name) || null;
+  closeCloudModal();
+  flagSaved('opened from cloud');
+}
+
+async function renameCloudLayout(id) {
+  const item = cloudList.find((it) => it.id === id);
+  const next = prompt('New name', item ? item.name : '');
+  if (next === null) return;
+  const name = cleanName(next);
+  const problem = nameError(
+    name,
+    cloudList.filter((it) => it.id !== id).map((it) => it.name),
+  );
+  if (problem) {
+    cloudSay(problem, true);
+    return;
+  }
+  await cloud.renameLayout(id, name);
+  if (cloudDocId === id) cloudDocName = name;
+  await refreshCloudList();
+  cloudSay(`Renamed to “${name}”.`);
+}
+
+async function deleteCloudLayout(id) {
+  const item = cloudList.find((it) => it.id === id);
+  const label = item ? `“${item.name}”` : 'this layout';
+  if (!confirm(`Delete ${label} from your account? This cannot be undone.`)) return;
+  await cloud.deleteLayout(id);
+  if (cloudDocId === id) {
+    cloudDocId = null;
+    cloudDocName = null;
+  }
+  await refreshCloudList();
+  cloudSay('Deleted.');
+}
+
+function wireCloudModal() {
+  const m = cloudModalEl();
+  if (!m) return;
+  const on = (id, ev, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(ev, fn);
+  };
+  // Clicking the dimmed backdrop closes, like the rack dialog.
+  m.addEventListener('click', (e) => {
+    if (e.target === m) closeCloudModal();
+  });
+  on('cl_close_x', 'click', closeCloudModal);
+  on('cl_google', 'click', () =>
+    cloudRun(async () => {
+      const user = await cloud.signInWithGoogle();
+      cloudSay(`Signed in as ${user.email ?? user.displayName ?? 'you'}.`);
+    }),
+  );
+  on('cl_signin', 'click', () => cloudRun(() => emailAuth('signin')));
+  on('cl_signup', 'click', () => cloudRun(() => emailAuth('signup')));
+  on('cl_forgot', 'click', () =>
+    cloudRun(async () => {
+      const email = (document.getElementById('cl_email')?.value || '').trim();
+      if (!email) {
+        cloudSay('Type your email above first, then press Forgot password.', true);
+        return;
+      }
+      await cloud.sendPasswordReset(email);
+      cloudSay(`Password reset link sent to ${email}.`);
+    }),
+  );
+  on('cl_signout', 'click', () =>
+    cloudRun(async () => {
+      await cloud.signOutNow();
+      cloudDocId = null;
+      cloudDocName = null;
+    }),
+  );
+  on('cl_save', 'click', () => cloudRun(saveToCloud));
+  on('cl_name', 'keydown', (e) => {
+    if (e.key === 'Enter') cloudRun(saveToCloud);
+  });
+  on('cl_pass', 'keydown', (e) => {
+    if (e.key === 'Enter') cloudRun(() => emailAuth('signin'));
+  });
+  const list = document.getElementById('cl_list');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-cl-open], [data-cl-rename], [data-cl-del]');
+      if (!btn) return;
+      const open = btn.getAttribute('data-cl-open');
+      if (open) {
+        cloudRun(() => openFromCloud(open));
+        return;
+      }
+      const rename = btn.getAttribute('data-cl-rename');
+      if (rename) {
+        cloudRun(() => renameCloudLayout(rename));
+        return;
+      }
+      const del = btn.getAttribute('data-cl-del');
+      if (del) cloudRun(() => deleteCloudLayout(del));
+    });
+  }
+}
+
+// Load the SDK a moment after the first paint: the editor is interactive first,
+// and the account button still settles into the right state.
+function startCloud() {
+  updateCloudChrome();
+  if (!cloud.cloudConfigured()) return;
+  const kick = () => {
+    const fail = (err) => {
+      cloudError = friendlyError(err);
+      console.warn('Cloud sign-in unavailable:', err);
+      updateCloudChrome();
+      if (cloudModalOpen()) renderCloudModal();
+    };
+    cloud
+      .watchAuth((user) => {
+        cloudUser = user;
+        cloudError = null;
+        updateCloudChrome();
+        if (cloudModalOpen()) renderCloudModal();
+      }, fail)
+      .catch(fail);
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(kick, { timeout: 2500 });
+  else setTimeout(kick, 900);
 }
 
 // ---------- 3D toggle ----------
@@ -3003,8 +3366,14 @@ function wireKeyboard() {
   const isTyping = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA');
 
   addEventListener('keydown', (e) => {
+    // The cloud dialog is dismissable from anywhere, even from its own inputs.
+    if (e.key === 'Escape' && cloudModalOpen()) {
+      closeCloudModal();
+      return;
+    }
     if (isTyping(e.target)) return;
     if (rackDialogOpen()) return; // the dialog owns the keyboard while it is open
+    if (cloudModalOpen()) return; // so does the cloud dialog
 
     // Ctrl/Cmd+Z undoes and Ctrl+Y / Ctrl+Shift+Z redoes. Every Ctrl/Cmd chord
     // is swallowed here so none fall through to the single-letter tool keys.
@@ -3274,6 +3643,18 @@ function wirePanels() {
     if (file) importLayoutFile(file);
     e.target.value = '';
   };
+
+  // The account button and both File → cloud entries open the same dialog.
+  const openCloud = () => {
+    if (!cloud.cloudConfigured()) {
+      alert(CLOUD_HELP);
+      return;
+    }
+    openCloudModal();
+  };
+  document.getElementById('authBtn').onclick = openCloud;
+  document.getElementById('cloudSaveBtn').onclick = openCloud;
+  document.getElementById('cloudOpenBtn').onclick = openCloud;
 }
 
 // ---------- entry point ----------
@@ -3307,4 +3688,5 @@ export function initEditor(layout) {
   centerView();
   setTool('select');
   updateHistoryButtons();
+  startCloud();
 }

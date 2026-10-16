@@ -814,3 +814,83 @@ canvas#c2d:focus {
 .rk-tone-bad {
   color: var(--node);
 }
+
+/* ---------- cloud ("My layouts") dialog ---------- */
+.cl-open-err {
+  margin: 8px 0 2px;
+  color: #e9b0a8;
+}
+#authBtn {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#authBtn.signed-in {
+  color: var(--ok);
+  border-color: #35513c;
+}
+.cl-card {
+  width: 540px;
+}
+.cl-me {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 6px;
+}
+.cl-who {
+  font:
+    10.5px Consolas,
+    monospace;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cl-list {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.cl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.cl-row:last-child {
+  border-bottom: 0;
+}
+.cl-row:hover {
+  background: var(--panel2);
+}
+.cl-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.cl-row-name {
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cl-row-meta {
+  font:
+    10.5px Consolas,
+    monospace;
+  color: var(--dim);
+}
+.cl-row-btns {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+#cl_status.cl-ok {
+  color: var(--ok);
+}
