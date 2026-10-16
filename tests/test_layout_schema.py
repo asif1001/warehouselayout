@@ -214,14 +214,16 @@ def test_fixtures_default_to_empty():
 
 def test_accepts_a_well_formed_fixture():
     state = from_db_connect(load_default())
-    state["fixtures"] = [{"id": "F-1", "kind": "door", "x": 4, "y": 9, "w": 1, "d": 0.16, "rot": 90}]
+    fixture = {"id": "F-1", "kind": "door", "x": 4, "y": 9, "w": 1, "d": 0.16, "rot": 90}
+    state["fixtures"] = [fixture]
     errors = validate_layout(state)
     assert errors == [], errors
 
 
 def test_rejects_fixture_with_bad_rotation():
     state = from_db_connect(load_default())
-    state["fixtures"] = [{"id": "F-1", "kind": "door", "x": 4, "y": 9, "w": 1, "d": 0.16, "rot": 45}]
+    fixture = {"id": "F-1", "kind": "door", "x": 4, "y": 9, "w": 1, "d": 0.16, "rot": 45}
+    state["fixtures"] = [fixture]
     errors = validate_layout(state)
     assert any("fixtures[0].rot must be one of" in e for e in errors)
 

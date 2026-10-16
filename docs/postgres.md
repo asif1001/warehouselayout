@@ -51,11 +51,11 @@ from server.persistence import LayoutRepository, connect
 
 with connect() as conn:
     repo = LayoutRepository(conn)
-    repo.init_db()                      # idempotent
+    repo.init_db()  # idempotent
 
-    layout = repo.get("OUTLET WAREHOUSE")   # -> dict or None
+    layout = repo.get("OUTLET WAREHOUSE")  # -> dict or None
     layout["meta"]["name"] = "OUTLET WAREHOUSE (rev B)"
-    repo.save(layout["meta"]["name"], layout)   # validates, then upserts
+    repo.save(layout["meta"]["name"], layout)  # validates, then upserts
 
     for row in repo.list_layouts():
         print(row["name"], row["schema_version"], row["updated_at"])
