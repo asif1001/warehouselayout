@@ -128,16 +128,19 @@ python -m http.server 8000      # then open http://localhost:8000
 - **2D Plan / 3D Preview** toggle in the toolbar.
 - **Export JSON / Import JSON** for sharing or version-controlling a layout.
 - **Export PDF** (`File → Export PDF…`) — a plotted drawing sheet, not a
-  screenshot. Pick A3 / A4 / A2 landscape and it produces: a frame with a title
-  block (project, drawing, scale, date, sheet n/N); the plan with its overall
-  dimensions, legend, north arrow, graphical scale bar and a stated scale chosen
-  to fit; then **zone, rack and equipment schedules** carrying the full
-  measurements — position, width/depth/area, clear height, bays, levels, bin
-  size, aisle, row pitch, row length and pallet positions. Every label is clamped
-  to **1–3 mm** on paper, so a busy plan still reads as a technical drawing;
-  only the sheet title is larger. Long schedules continue onto numbered
-  continuation sheets instead of running into the title block. Output is true
-  vector (~40 KB for a full sheet), so it stays sharp at any zoom or print size.
+  screenshot. **Pick the source**: the layout on screen, any layout saved in your
+  account, or a **JSON file** from disk — so only the layout you select is
+  plotted, without loading it into the editor first. Choose A3 / A4 / A2
+  landscape and it produces: a frame with a title block (project, drawing, scale,
+  date, sheet n/N); the plan with its overall dimensions, legend, north arrow,
+  graphical scale bar and a stated scale chosen to fit; then **zone, rack and
+  equipment schedules** carrying the full measurements — position,
+  width/depth/area, clear height, bays, levels, bin size, aisle, row pitch, row
+  length and pallet positions. Every label is clamped to **1–3 mm** on paper, so
+  a busy plan still reads as a technical drawing; only the sheet title is larger.
+  Long schedules continue onto numbered continuation sheets instead of running
+  into the title block. Output is true vector (~40 KB for a full sheet), so it
+  stays sharp at any zoom or print size.
 - **Cloud saving — several layouts, account required:** keeping more than one
   layout is an account feature. Sign in with Google or an email address and
   _File →_ gives you **New layout…**, **My layouts…** and **Save now**

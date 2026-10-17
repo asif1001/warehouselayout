@@ -2519,16 +2519,33 @@ function exportLayout() {
   flagSaved('exported');
 }
 
+// Turn a loaded file or cloud document into an editor-native layout: backfill it
+// from the shipped defaults and normalize the editor-only blocks. This does not
+// touch the editor, which is what lets "Export PDF" plot a layout that is not the
+// one on screen.
+async function preparedState(dbData) {
+  const clean = { ...dbData };
+  delete clean.bins; // derived; binOverrides is user data and is kept
+  let parsed;
+  try {
+    parsed = fromDbConnect(migrate(clean));
+  } catch (err) {
+    throw new Error('Could not load that layout: ' + err.message);
+  }
+  const defaults = await fetchDefaultLayout();
+  const next = Object.assign(JSON.parse(JSON.stringify(defaults)), parsed);
+  next.labelStyle = normalizeLabelStyle(next.labelStyle);
+  next.texts = normalizeTexts(next.texts);
+  next.labelOverrides = normalizeLabelOverrides(next.labelOverrides);
+  next.fixtures = normalizeFixtures(next.fixtures);
+  return next;
+}
+
 // Install a ready editor-native layout as the working copy: backfill it from the
 // shipped defaults, normalize the editor-only blocks, repaint, and start a new
 // undo timeline. `link` ties it to a saved cloud layout.
 async function installLayout(next, { link = null } = {}) {
-  const defaults = await fetchDefaultLayout();
-  state = Object.assign(JSON.parse(JSON.stringify(defaults)), next);
-  state.labelStyle = normalizeLabelStyle(state.labelStyle);
-  state.texts = normalizeTexts(state.texts);
-  state.labelOverrides = normalizeLabelOverrides(state.labelOverrides);
-  state.fixtures = normalizeFixtures(state.fixtures);
+  state = next;
   sel = null;
   selBay = null;
   if (link) linkCloud(link.id, link.name);
@@ -2555,15 +2572,7 @@ function linkCloud(id, name) {
 // Swap the working layout for a freshly loaded one, backfilled from the shipped
 // defaults. Shared by Import JSON and "Open from cloud".
 async function adoptLayout(dbData) {
-  const clean = { ...dbData };
-  delete clean.bins; // derived — regenerated on next save; binOverrides is NOT deleted (user data)
-  let parsed;
-  try {
-    parsed = fromDbConnect(migrate(clean));
-  } catch (err) {
-    throw new Error('Could not load that layout: ' + err.message);
-  }
-  await installLayout(parsed);
+  await installLayout(await preparedState(dbData));
 }
 
 async function importLayoutFile(file) {
@@ -2586,10 +2595,19 @@ async function importLayoutFile(file) {
 // A plotted drawing sheet, not a screenshot: the plan is drawn as vectors with a
 // frame, title block, dimensions, legend, north arrow and scale bar, and the
 // measurements continue in schedules on the following pages. Every label is
-// clamped to 1–3 mm so a busy plan still reads as a technical drawing.
+// clamped to 1-3 mm so a busy plan still reads as a technical drawing.
 // Sheet layout lives in plot.js; the PDF primitives in pdf.js.
+//
+// The sheet can plot more than what is on screen: the source is either the open
+// layout, one saved in the account, or a JSON file picked from disk. Nothing is
+// loaded into the editor to do it.
 
 const PRINT_OPTS = { paper: 'A3', dimensions: true, grid: true, schedules: true };
+
+// What the sheet plots: { kind: 'current' } | { kind: 'cloud', id, name }
+// | { kind: 'file', name, state }.
+let printSource = { kind: 'current' };
+let printSourceCache = { key: null, state: null };
 
 function printModalEl() {
   return document.getElementById('printModal');
@@ -2615,14 +2633,86 @@ function pdfFileName(model) {
   return `${base || 'warehouse-layout'}-${model.meta.date}.pdf`;
 }
 
-function updatePrintSummary(model) {
+function sourceKey() {
+  if (printSource.kind === 'cloud') return 'cloud:' + printSource.id;
+  if (printSource.kind === 'file') return 'file:' + (printSource.name || '');
+  return 'current';
+}
+
+function sourceLabel() {
+  if (printSource.kind === 'file') return printSource.name;
+  if (printSource.kind === 'cloud') return printSource.name;
+  return 'the layout on screen';
+}
+
+// The layout the sheet will plot. Cloud and file sources are normalised exactly
+// like an imported layout, but never installed into the editor.
+async function printSourceState() {
+  if (printSource.kind === 'current') return state;
+  const key = sourceKey();
+  if (printSourceCache.key === key && printSourceCache.state) return printSourceCache.state;
+  const next =
+    printSource.kind === 'file'
+      ? printSource.state
+      : await preparedState(await cloud.loadLayout(printSource.id));
+  printSourceCache = { key, state: next };
+  return next;
+}
+
+function sourceOptionsHtml() {
+  const sel = (v) => (sourceKey() === v ? ' selected' : '');
+  let out = '';
+  if (printSource.kind === 'file') {
+    out += `<option value="file"${sel('file')}>File: ${esc(printSource.name)}</option>`;
+  }
+  out += `<option value="current"${sel('current')}>The layout on screen</option>`;
+  if (cloudUser && cloudList.length) {
+    out += '<optgroup label="Saved in your account">';
+    for (const it of cloudList) {
+      out += `<option value="cloud:${esc(it.id)}"${sel('cloud:' + it.id)}>${esc(it.name)}</option>`;
+    }
+    out += '</optgroup>';
+  }
+  return out;
+}
+
+async function updatePrintSummary() {
   const el = document.getElementById('pd_summary');
   if (!el) return;
-  const pages = sheetPlan(model).length;
-  el.innerHTML =
-    `Scale <b>1:${model.scale.denom}</b> · <b>${model.paper.name}</b> landscape` +
-    ` · extent <b>${fmt(model.extent.w, 1)} × ${fmt(model.extent.d, 1)} m</b>` +
-    ` · <b>${pages}</b> page${pages === 1 ? '' : 's'} · labels 1–3 mm`;
+  el.textContent = 'Preparing…';
+  try {
+    const src = await printSourceState();
+    const model = buildSheetModel(src, { ...PRINT_OPTS, project: src.meta?.name });
+    const pages = sheetPlan(model).length;
+    if (!document.getElementById('pd_summary')) return; // dialog closed meanwhile
+    el.innerHTML =
+      `Plotting <b>${esc(sourceLabel())}</b> · scale <b>1:${model.scale.denom}</b>` +
+      ` · <b>${model.paper.name}</b> landscape` +
+      ` · extent <b>${fmt(model.extent.w, 1)} × ${fmt(model.extent.d, 1)} m</b>` +
+      ` · <b>${pages}</b> page${pages === 1 ? '' : 's'} · labels 1–3 mm`;
+  } catch (err) {
+    if (el) el.textContent = friendlyError(err);
+  }
+}
+
+async function pickPrintFile() {
+  const inp = document.getElementById('pdfFile');
+  if (!inp) return;
+  inp.value = '';
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const next = await preparedState(data);
+      printSource = { kind: 'file', name: file.name, state: next };
+      printSourceCache = { key: sourceKey(), state: next };
+      renderPrintDialog();
+    } catch (err) {
+      alert('Could not read that file: ' + (err?.message ?? err));
+    }
+  };
+  inp.click();
 }
 
 function renderPrintDialog() {
@@ -2639,6 +2729,10 @@ function renderPrintDialog() {
         <div class="hintline">A plotted sheet: the plan with its dimensions, legend, north
           arrow, scale bar and title block, then measurement schedules on the following
           pages.</div>
+        <div class="field"><label>Source</label>
+          <select id="pd_source">${sourceOptionsHtml()}</select>
+          <button class="btn small" id="pd_file" title="Plot a layout from a JSON file">From a file…</button>
+        </div>
         <div class="field"><label>Paper</label>
           <select id="pd_paper">
             ${['A3', 'A4', 'A2']
@@ -2665,42 +2759,77 @@ function renderPrintDialog() {
         </div>
       </div>
     </div>`;
-  updatePrintSummary(buildSheetModel(state, PRINT_OPTS));
   wirePrintDialog();
+  updatePrintSummary();
+}
+
+async function openPrintDialog() {
+  const m = printModalEl();
+  if (!m) return;
+  printSource = { kind: 'current' };
+  printSourceCache = { key: null, state: null };
+  m.hidden = false;
+  m.innerHTML = `<div class="modal-card"><div class="modal-body"><div class="hintline">Preparing…</div></div></div>`;
+  // A signed-in account can plot any layout it has saved, so fetch the list first.
+  if (cloudUser && cloud.cloudConfigured()) {
+    try {
+      cloudList = await cloud.listLayouts();
+    } catch {
+      /* keep whatever list we already had */
+    }
+  }
+  if (!m.hidden) renderPrintDialog();
 }
 
 function wirePrintDialog() {
   const q = (id) => document.getElementById(id);
-  const refresh = () => {
+  const readOpts = () => {
     const paper = q('pd_paper')?.value;
     PRINT_OPTS.paper = PAPERS[paper] ? paper : 'A3';
     PRINT_OPTS.dimensions = !!q('pd_dims')?.checked;
     PRINT_OPTS.grid = !!q('pd_grid')?.checked;
     PRINT_OPTS.schedules = !!q('pd_sched')?.checked;
-    updatePrintSummary(buildSheetModel(state, PRINT_OPTS));
   };
+  q('pd_source').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v.startsWith('cloud:')) {
+      const id = v.slice('cloud:'.length);
+      const it = cloudList.find((x) => x.id === id);
+      printSource = { kind: 'cloud', id, name: it ? it.name : 'saved layout' };
+    } else {
+      printSource = { kind: 'current' };
+    }
+    updatePrintSummary();
+  });
+  q('pd_file').onclick = pickPrintFile;
   ['pd_paper', 'pd_dims', 'pd_grid', 'pd_sched'].forEach((id) => {
     const el = q(id);
-    if (el) el.addEventListener('change', refresh);
+    if (el) {
+      el.addEventListener('change', () => {
+        readOpts();
+        updatePrintSummary();
+      });
+    }
   });
   q('pd_close').onclick = closePrintDialog;
   q('pd_cancel').onclick = closePrintDialog;
-  q('pd_export').onclick = () => {
+  q('pd_export').onclick = async () => {
+    const btn = q('pd_export');
+    if (btn) btn.disabled = true;
     try {
-      exportPdf();
+      await exportPdf();
     } catch (err) {
       alert('Could not build the PDF: ' + (err?.message ?? err));
+    } finally {
+      if (btn) btn.disabled = false;
     }
   };
 }
 
-function exportPdf() {
-  const model = buildSheetModel(state, { ...PRINT_OPTS, project: state.meta?.name });
-  const doc = createDocument({
-    title: model.meta.title,
-    subject: model.meta.project,
-    author: '',
-  });
+async function exportPdf() {
+  const src = await printSourceState();
+  const model = buildSheetModel(src, { ...PRINT_OPTS, project: src.meta?.name });
+  const doc = createDocument({ title: model.meta.title, subject: model.meta.project });
   renderSheet(doc, model);
   const bytes = doc.toBytes();
   const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -3979,7 +4108,7 @@ function wirePanels() {
   document.getElementById('toggleLabels').onclick = toggleLabels;
   document.getElementById('exportBtn').onclick = exportLayout;
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
-  document.getElementById('pdfBtn').onclick = renderPrintDialog;
+  document.getElementById('pdfBtn').onclick = openPrintDialog;
   document.getElementById('importFile').onchange = (e) => {
     const file = e.target.files[0];
     if (file) importLayoutFile(file);

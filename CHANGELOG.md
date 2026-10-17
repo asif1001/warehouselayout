@@ -10,7 +10,11 @@ All notable changes to this project are documented here. The format follows
 
 - **Plotted PDF output**: _File → Export PDF…_ produces a real drawing sheet
   instead of a screenshot — A3 / A4 / A2 landscape, chosen from a dialog that
-  shows the resulting scale and page count as you change the options. The plan
+  shows the resulting scale and page count as you change the options. The
+  **source is selectable**: the layout on screen, any layout saved in the account
+  (listed from Firestore when signed in), or a **JSON file** picked from disk.
+  The chosen layout is normalised for plotting but never loaded into the editor,
+  so only the selection is exported. The plan
   page carries a frame and title block (project, drawing, scale, date, sheet
   n/N), overall dimensions, a legend, a north arrow, a graphical scale bar and a
   standard scale picked to fit the sheet; the following pages carry **zone, rack
