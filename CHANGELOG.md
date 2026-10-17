@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Cloud auto-save**: once a layout exists in the account, every change is
+  written to Firestore about 2.5 s after the typing stops — no Save to remember.
+  A layout that has never been named still needs one Save (there is nowhere to put
+  it), so `Ctrl+S` / _File → Save now_ remains as a force-sync. The toolbar grew a
+  small state indicator: _unsaved_ → _saving…_ → _synced_, and _not synced_ with a
+  tooltip carrying the reason if the write fails; a pending write is flushed when
+  the tab is hidden, and retried when the browser comes back online. Undo/redo
+  schedule a sync too, since they change the layout. Failures never mark the
+  layout as saved, so the next edit retries.
 - **Multiple layouts per account**: keeping more than one layout is gated behind
   signing in — it is an account feature, not a local one. _File →_ now offers
   **New layout…**, **My layouts…** and **Save to cloud** (`Ctrl+S`), and the

@@ -120,6 +120,12 @@ let cloudError = null; // set when the SDK or sign-in state could not be reached
 let cloudBusy = false;
 let cloudNew = false; // the dialog is showing the "new layout" form
 let cloudNote = null; // one line shown above the sign-in form, e.g. after "New layout…"
+// Auto-save: once a layout exists in the account, every change is written a
+// couple of seconds after the typing stops, so there is no Save to forget.
+const CLOUD_SYNC_DELAY = 2500;
+let cloudSyncTimer = null;
+let cloudSyncPending = false;
+let cloudSyncBusy = false;
 
 // World-space boxes of the automatic labels painted by the last draw(). Recorded
 // during draw() (like drawnBounds) so clicking a label can never drift from what
@@ -192,6 +198,7 @@ function persistNow() {
   } catch {
     flagSaved('not saved — export!', true);
   }
+  scheduleCloudSync();
 }
 
 function commitHistory() {
@@ -2540,6 +2547,7 @@ function linkCloud(id, name) {
   cloudDocName = name || null;
   if (id) saveCloudLink({ id, name });
   else clearCloudLink();
+  resetCloudSync();
 }
 
 // Swap the working layout for a freshly loaded one, backfilled from the shipped
@@ -2569,6 +2577,63 @@ async function importLayoutFile(file) {
     await adoptLayout(data);
   } catch (err) {
     alert(err.message);
+  }
+}
+
+// ---------- cloud auto-save ----------
+// A layout that exists in the account keeps itself saved: every change schedules
+// a write, and the write happens once the user stops typing. A layout that has
+// never been named has nowhere to go, so auto-save starts after the first Save.
+
+function setCloudFlag(text, tone, title) {
+  const el = document.getElementById('cloudFlag');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = text && tone ? 'cloud-' + tone : '';
+  el.title = title || '';
+}
+
+function cloudSyncable() {
+  return !!cloudUser && !!cloudDocId && cloud.cloudConfigured();
+}
+
+// Forget any pending write and show the state the layout is really in.
+function resetCloudSync() {
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = null;
+  cloudSyncPending = false;
+  if (cloudSyncable()) setCloudFlag('synced', 'ok', 'Saved to your account');
+  else setCloudFlag('');
+}
+
+function scheduleCloudSync() {
+  if (!cloudSyncable()) {
+    setCloudFlag('');
+    return;
+  }
+  cloudSyncPending = true;
+  setCloudFlag('unsaved', 'warn', 'Changes will be saved to your account in a moment');
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => {
+    cloudSyncTimer = null;
+    flushCloudSync();
+  }, CLOUD_SYNC_DELAY);
+}
+
+async function flushCloudSync() {
+  if (!cloudSyncPending || cloudSyncBusy || !cloudSyncable()) return;
+  cloudSyncBusy = true;
+  setCloudFlag('saving…', 'warn', 'Saving to your account');
+  try {
+    await cloud.saveLayout({ id: cloudDocId, name: cloudDocName || defaultCloudName(), state });
+    cloudSyncPending = false;
+    setCloudFlag('synced', 'ok', 'Saved to your account');
+  } catch (err) {
+    const why = friendlyError(err);
+    setCloudFlag('not synced', 'bad', why);
+    console.warn('Cloud auto-save failed:', err);
+  } finally {
+    cloudSyncBusy = false;
   }
 }
 
@@ -2724,10 +2789,10 @@ function panelHtml() {
       </div>`;
   }
   const editing = cloudDocId
-    ? `<div class="hintline">Editing <strong>${esc(cloudDocName || '')}</strong> — Save
-       overwrites it; change the name to save a copy instead.</div>`
-    : `<div class="hintline">This layout is not in your account yet — give it a name and
-       Save, or press <strong>New layout</strong> to start another.</div>`;
+    ? `<div class="hintline">Editing <strong>${esc(cloudDocName || '')}</strong> — changes save
+       to your account automatically. Rename it to keep this one and start a copy.</div>`
+    : `<div class="hintline">Not in your account yet — give it a name and Save; from then on
+       changes sync automatically. Or press <strong>New layout</strong> to start another.</div>`;
   return `
     <div class="cl-me">
       <span class="cl-who">${esc(cloudUser.email || cloudUser.displayName || 'Signed in')}</span>
@@ -3012,6 +3077,7 @@ function startCloud() {
       .watchAuth((user) => {
         cloudUser = user;
         cloudError = null;
+        resetCloudSync(); // signing in/out changes whether we can sync
         updateCloudChrome();
         if (cloudModalOpen()) renderCloudModal();
       }, fail)
@@ -3792,6 +3858,13 @@ function wirePanels() {
   document.getElementById('cloudNewBtn').onclick = () => openCloud('new');
   document.getElementById('cloudOpenBtn').onclick = () => openCloud();
   document.getElementById('cloudSaveBtn').onclick = saveToCloudQuick;
+
+  // Flush a pending auto-save when the tab is hidden (mobile keeps the write
+  // going) and retry as soon as the network comes back.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushCloudSync();
+  });
+  addEventListener('online', () => flushCloudSync());
 }
 
 // ---------- entry point ----------

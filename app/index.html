@@ -72,14 +72,19 @@
             <button class="menu-item" id="cloudOpenBtn" title="Your saved layouts — needs an account">
               My layouts…
             </button>
-            <button class="menu-item" id="cloudSaveBtn" title="Save this layout to your account (Ctrl+S)">
-              Save to cloud<span class="kbd">Ctrl+S</span>
+            <button
+              class="menu-item"
+              id="cloudSaveBtn"
+              title="Save to your account right away (Ctrl+S) — changes also sync on their own"
+            >
+              Save now<span class="kbd">Ctrl+S</span>
             </button>
           </div>
         </div>
         <input type="file" id="importFile" accept=".json" style="display: none" />
         <button class="btn" id="authBtn" title="Sign in to save your layouts to your account">Sign in</button>
         <div class="spacer"></div>
+        <span id="cloudFlag"></span>
         <span id="savedFlag"></span>
       </div>
 

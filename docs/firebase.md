@@ -107,9 +107,12 @@ rather than letting Firestore reject it.
   can start **blank**, from the **sample** layout, or as a **copy of the layout on
   screen**. The account is written _first_, so a failed save leaves the layout you
   had open untouched.
-- **Save** (`Ctrl+S`) — writes the layout you are editing back to its saved copy.
-  Change the name first and Save makes a copy instead. The open layout is
-  remembered across reloads, so `Ctrl+S` never creates a surprise duplicate.
+- **Save** (`Ctrl+S`) — syncs immediately. Normally you don't need it: once a
+  layout is in your account, **every change saves itself** a couple of seconds
+  after you stop typing, and the toolbar shows _unsaved · saving… · synced_. A
+  layout that has never been named needs one Save first, because there is nowhere
+  to put it yet. If a write fails the toolbar says _not synced_ (hover for the
+  reason) and the next edit retries.
 - **My layouts…** — everything saved, with the open one marked, plus **Open**,
   **Rename** and **Delete** per row. Opening replaces what is on screen.
 - Signed out, or with the config left as placeholders, the editor behaves

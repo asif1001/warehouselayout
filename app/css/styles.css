@@ -816,6 +816,24 @@ canvas#c2d:focus {
 }
 
 /* ---------- cloud ("My layouts") dialog ---------- */
+#cloudFlag {
+  font:
+    10.5px/1 Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  margin-right: 8px;
+  white-space: nowrap;
+}
+#cloudFlag.cloud-ok {
+  color: var(--ok);
+}
+#cloudFlag.cloud-warn {
+  color: var(--accent);
+}
+#cloudFlag.cloud-bad {
+  color: var(--node);
+}
 .cl-open-err {
   margin: 8px 0 2px;
   color: #e9b0a8;
