@@ -51,6 +51,8 @@ import {
 import { drawSymbol } from './symbols.js';
 import * as cloud from './cloud.js';
 import { blankLayout, clearCloudLink, loadCloudLink, saveCloudLink } from './store.js';
+import { buildSheetModel, fmt, renderSheet, sheetPlan, PAPERS } from './plot.js';
+import { createDocument } from './pdf.js';
 import { cleanName, formatBytes, formatWhen, friendlyError, nameError, MAX_NAME } from './cloudDocs.js';
 
 let state;
@@ -2580,6 +2582,138 @@ async function importLayoutFile(file) {
   }
 }
 
+// ---------- plotted PDF ----------
+// A plotted drawing sheet, not a screenshot: the plan is drawn as vectors with a
+// frame, title block, dimensions, legend, north arrow and scale bar, and the
+// measurements continue in schedules on the following pages. Every label is
+// clamped to 1–3 mm so a busy plan still reads as a technical drawing.
+// Sheet layout lives in plot.js; the PDF primitives in pdf.js.
+
+const PRINT_OPTS = { paper: 'A3', dimensions: true, grid: true, schedules: true };
+
+function printModalEl() {
+  return document.getElementById('printModal');
+}
+
+function printDialogOpen() {
+  const m = printModalEl();
+  return !!m && !m.hidden;
+}
+
+function closePrintDialog() {
+  const m = printModalEl();
+  if (!m) return;
+  m.hidden = true;
+  m.innerHTML = '';
+}
+
+function pdfFileName(model) {
+  const base = (model.meta.project || 'warehouse-layout')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${base || 'warehouse-layout'}-${model.meta.date}.pdf`;
+}
+
+function updatePrintSummary(model) {
+  const el = document.getElementById('pd_summary');
+  if (!el) return;
+  const pages = sheetPlan(model).length;
+  el.innerHTML =
+    `Scale <b>1:${model.scale.denom}</b> · <b>${model.paper.name}</b> landscape` +
+    ` · extent <b>${fmt(model.extent.w, 1)} × ${fmt(model.extent.d, 1)} m</b>` +
+    ` · <b>${pages}</b> page${pages === 1 ? '' : 's'} · labels 1–3 mm`;
+}
+
+function renderPrintDialog() {
+  const m = printModalEl();
+  if (!m) return;
+  m.hidden = false;
+  m.innerHTML = `
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Export PDF">
+      <div class="modal-head">
+        <h2>Export PDF</h2>
+        <button class="modal-x" id="pd_close" title="Close (Esc)">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="hintline">A plotted sheet: the plan with its dimensions, legend, north
+          arrow, scale bar and title block, then measurement schedules on the following
+          pages.</div>
+        <div class="field"><label>Paper</label>
+          <select id="pd_paper">
+            ${['A3', 'A4', 'A2']
+              .map(
+                (p) =>
+                  `<option value="${p}" ${PRINT_OPTS.paper === p ? 'selected' : ''}>${p} landscape${
+                    p === 'A3' ? ' (recommended)' : ''
+                  }</option>`,
+              )
+              .join('')}
+          </select></div>
+        <div class="field"><label>Include</label>
+          <span class="pd-checks">
+            <label><input type="checkbox" id="pd_dims" ${PRINT_OPTS.dimensions ? 'checked' : ''}> Dimensions</label>
+            <label><input type="checkbox" id="pd_grid" ${PRINT_OPTS.grid ? 'checked' : ''}> Grid</label>
+            <label><input type="checkbox" id="pd_sched" ${PRINT_OPTS.schedules ? 'checked' : ''}> Schedules</label>
+          </span></div>
+        <div class="modal-summary" id="pd_summary"></div>
+      </div>
+      <div class="modal-foot">
+        <div class="btnrow">
+          <button class="btn" id="pd_export">Export PDF</button>
+          <button class="btn small" id="pd_cancel">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  updatePrintSummary(buildSheetModel(state, PRINT_OPTS));
+  wirePrintDialog();
+}
+
+function wirePrintDialog() {
+  const q = (id) => document.getElementById(id);
+  const refresh = () => {
+    const paper = q('pd_paper')?.value;
+    PRINT_OPTS.paper = PAPERS[paper] ? paper : 'A3';
+    PRINT_OPTS.dimensions = !!q('pd_dims')?.checked;
+    PRINT_OPTS.grid = !!q('pd_grid')?.checked;
+    PRINT_OPTS.schedules = !!q('pd_sched')?.checked;
+    updatePrintSummary(buildSheetModel(state, PRINT_OPTS));
+  };
+  ['pd_paper', 'pd_dims', 'pd_grid', 'pd_sched'].forEach((id) => {
+    const el = q(id);
+    if (el) el.addEventListener('change', refresh);
+  });
+  q('pd_close').onclick = closePrintDialog;
+  q('pd_cancel').onclick = closePrintDialog;
+  q('pd_export').onclick = () => {
+    try {
+      exportPdf();
+    } catch (err) {
+      alert('Could not build the PDF: ' + (err?.message ?? err));
+    }
+  };
+}
+
+function exportPdf() {
+  const model = buildSheetModel(state, { ...PRINT_OPTS, project: state.meta?.name });
+  const doc = createDocument({
+    title: model.meta.title,
+    subject: model.meta.project,
+    author: '',
+  });
+  renderSheet(doc, model);
+  const bytes = doc.toBytes();
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = pdfFileName(model);
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  closePrintDialog();
+  flagSaved('PDF exported');
+}
+
 // ---------- cloud auto-save ----------
 // A layout that exists in the account keeps itself saved: every change schedules
 // a write, and the write happens once the user stops typing. A layout that has
@@ -3563,14 +3697,19 @@ function wireKeyboard() {
   const isTyping = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA');
 
   addEventListener('keydown', (e) => {
-    // The cloud dialog is dismissable from anywhere, even from its own inputs.
+    // The cloud and PDF dialogs are dismissable from anywhere, even their inputs.
     if (e.key === 'Escape' && cloudModalOpen()) {
       closeCloudModal();
+      return;
+    }
+    if (e.key === 'Escape' && printDialogOpen()) {
+      closePrintDialog();
       return;
     }
     if (isTyping(e.target)) return;
     if (rackDialogOpen()) return; // the dialog owns the keyboard while it is open
     if (cloudModalOpen()) return; // so does the cloud dialog
+    if (printDialogOpen()) return;
 
     // Ctrl/Cmd+Z undoes and Ctrl+Y / Ctrl+Shift+Z redoes. Every Ctrl/Cmd chord
     // is swallowed here so none fall through to the single-letter tool keys.
@@ -3840,6 +3979,7 @@ function wirePanels() {
   document.getElementById('toggleLabels').onclick = toggleLabels;
   document.getElementById('exportBtn').onclick = exportLayout;
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
+  document.getElementById('pdfBtn').onclick = renderPrintDialog;
   document.getElementById('importFile').onchange = (e) => {
     const file = e.target.files[0];
     if (file) importLayoutFile(file);

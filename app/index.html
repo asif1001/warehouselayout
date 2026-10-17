@@ -65,6 +65,10 @@
           <div class="menu-list">
             <button class="menu-item" id="exportBtn">Export JSON</button>
             <button class="menu-item" id="importBtn">Import JSON</button>
+            <div class="menu-sep">Print</div>
+            <button class="menu-item" id="pdfBtn" title="A plotted sheet with dimensions and schedules">
+              Export PDF…
+            </button>
             <div class="menu-sep">Cloud &middot; account</div>
             <button class="menu-item" id="cloudNewBtn" title="Create another layout — needs an account">
               New layout…
@@ -203,6 +207,7 @@
 
       <div id="rackModal" class="modal" hidden></div>
       <div id="cloudModal" class="modal" hidden></div>
+      <div id="printModal" class="modal" hidden></div>
     </div>
 
     <div id="bootError"></div>

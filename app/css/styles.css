@@ -816,6 +816,23 @@ canvas#c2d:focus {
 }
 
 /* ---------- cloud ("My layouts") dialog ---------- */
+.pd-checks {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+.pd-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.pd-checks input {
+  accent-color: var(--accent);
+}
 #cloudFlag {
   font:
     10.5px/1 Consolas,

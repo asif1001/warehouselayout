@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Plotted PDF output**: _File → Export PDF…_ produces a real drawing sheet
+  instead of a screenshot — A3 / A4 / A2 landscape, chosen from a dialog that
+  shows the resulting scale and page count as you change the options. The plan
+  page carries a frame and title block (project, drawing, scale, date, sheet
+  n/N), overall dimensions, a legend, a north arrow, a graphical scale bar and a
+  standard scale picked to fit the sheet; the following pages carry **zone, rack
+  and equipment schedules** with position, width/depth/area, clear height, bays,
+  levels, bin size, aisle, row pitch, row length and pallet positions, plus
+  totals. Schedules flow onto numbered continuation sheets (with a repeated
+  header) rather than overrunning the title block. Every label — plan
+  annotation, dimension text, table cell — is clamped to **1–3 mm** so a busy
+  plan stays legible as a technical drawing; only the sheet title is larger.
+  New modules `app/js/plot.js` (sheet model + renderer, pure and unit-tested)
+  and `app/js/pdf.js` (a dependency-free vector PDF writer: Helvetica base-14
+  fonts with real glyph metrics for alignment and cell fitting, lines, filled
+  polygons, dashes and JPEG XObjects, with a proper xref table).
 - **Cloud auto-save**: once a layout exists in the account, every change is
   written to Firestore about 2.5 s after the typing stops — no Save to remember.
   A layout that has never been named still needs one Save (there is nowhere to put
