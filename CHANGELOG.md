@@ -8,22 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Plotted PDF output**: _File → Export PDF…_ produces a real drawing sheet
-  instead of a screenshot — A3 / A4 / A2 landscape, chosen from a dialog that
-  shows the resulting scale and page count as you change the options. The
-  **source is selectable**: the layout on screen, any layout saved in the account
-  (listed from Firestore when signed in), or a **JSON file** picked from disk.
-  The chosen layout is normalised for plotting but never loaded into the editor,
-  so only the selection is exported. The plan
-  page carries a frame and title block (project, drawing, scale, date, sheet
-  n/N), overall dimensions, a legend, a north arrow, a graphical scale bar and a
-  standard scale picked to fit the sheet; the following pages carry **zone, rack
-  and equipment schedules** with position, width/depth/area, clear height, bays,
-  levels, bin size, aisle, row pitch, row length and pallet positions, plus
-  totals. Schedules flow onto numbered continuation sheets (with a repeated
-  header) rather than overrunning the title block. Every label — plan
-  annotation, dimension text, table cell — is clamped to **1–3 mm** so a busy
-  plan stays legible as a technical drawing; only the sheet title is larger.
+- **Plotted PDF output**: _File → Export PDF…_ produces a real architectural
+  drawing sheet instead of a screenshot. The **source is selectable**: the layout
+  on screen, any layout saved in the account (listed from Firestore when signed
+  in), or a **JSON file** picked from disk; the chosen layout is normalised for
+  plotting but never loaded into the editor, so only the selection is exported.
+  The sheet is A3 / A4 / A2 in portrait or landscape, defaulting to whichever
+  suits the layout's shape, and carries:
+  **dimension chains on all four sides** (a segmented chain plus an overall
+  dimension, with extension lines and 45° ticks, in mm or m); a stacked **title
+  block** with clear height, proposed ceiling height, date, project, project
+  location, drawing title, drawing number and a scale / drawn by / checked by /
+  approved by strip; and a big underlined **title band** along the bottom.
+  Optional **zone, rack and equipment schedules** follow on numbered continuation
+  sheets (with a repeated header) with position, width/depth/area, clear height,
+  bays, levels, bin size, aisle, row pitch, row length and pallet positions, plus
+  totals. Every label — plan annotation, dimension text, table cell — is clamped
+  to **1–3 mm** so a busy plan stays legible as a technical drawing; only the
+  sheet title and section headings are larger.
   New modules `app/js/plot.js` (sheet model + renderer, pure and unit-tested)
   and `app/js/pdf.js` (a dependency-free vector PDF writer: Helvetica base-14
   fonts with real glyph metrics for alignment and cell fitting, lines, filled

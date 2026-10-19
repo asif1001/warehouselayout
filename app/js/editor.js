@@ -51,7 +51,7 @@ import {
 import { drawSymbol } from './symbols.js';
 import * as cloud from './cloud.js';
 import { blankLayout, clearCloudLink, loadCloudLink, saveCloudLink } from './store.js';
-import { buildSheetModel, fmt, renderSheet, sheetPlan, PAPERS } from './plot.js';
+import { SHEETS, buildSheetModel, fmt, layoutExtent, renderSheet, sheetPlan } from './plot.js';
 import { createDocument } from './pdf.js';
 import { cleanName, formatBytes, formatWhen, friendlyError, nameError, MAX_NAME } from './cloudDocs.js';
 
@@ -2592,17 +2592,81 @@ async function importLayoutFile(file) {
 }
 
 // ---------- plotted PDF ----------
-// A plotted drawing sheet, not a screenshot: the plan is drawn as vectors with a
-// frame, title block, dimensions, legend, north arrow and scale bar, and the
-// measurements continue in schedules on the following pages. Every label is
-// clamped to 1-3 mm so a busy plan still reads as a technical drawing.
-// Sheet layout lives in plot.js; the PDF primitives in pdf.js.
+// An architectural drawing sheet, not a screenshot: a bordered sheet with
+// dimension chains on all four sides, a stacked title block and a big underlined
+// title band. The plan is drawn as vectors; measurement schedules can follow on
+// continuation sheets. Every label is clamped to 1-3 mm.
 //
 // The sheet can plot more than what is on screen: the source is either the open
 // layout, one saved in the account, or a JSON file picked from disk. Nothing is
 // loaded into the editor to do it.
+//
+// Sheet layout lives in plot.js; the PDF primitives in pdf.js.
 
-const PRINT_OPTS = { paper: 'A3', dimensions: true, grid: true, schedules: true };
+const PRINT_OPTS = {
+  sheet: 'A3P',
+  dimensions: true,
+  grid: false,
+  schedules: true,
+  units: 'mm',
+};
+
+// Title-block details, remembered between sessions so a drawing set keeps the
+// same project, location and sign-off.
+const SHEET_META_KEY = 'warehouse_layout_editor_sheet_v1';
+const SHEET_META_DEFAULTS = {
+  project: '',
+  location: '',
+  drawingTitle: 'Warehouse layout plan',
+  drawingNo: '',
+  drawnBy: '',
+  checkedBy: '',
+  approvedBy: '',
+  date: '',
+  clearHeightMm: 0,
+  ceilingHeightMm: 0,
+  sheet: '', // '' = choose from the layout's shape
+};
+
+function loadSheetMeta() {
+  try {
+    const raw = localStorage.getItem(SHEET_META_KEY);
+    return raw ? { ...SHEET_META_DEFAULTS, ...JSON.parse(raw) } : { ...SHEET_META_DEFAULTS };
+  } catch {
+    return { ...SHEET_META_DEFAULTS };
+  }
+}
+
+let sheetMeta = loadSheetMeta();
+
+function saveSheetMeta() {
+  try {
+    localStorage.setItem(SHEET_META_KEY, JSON.stringify(sheetMeta));
+  } catch {
+    /* a full quota must not break exporting */
+  }
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// The options buildSheetModel() wants, with the title block filled in.
+function sheetOptions(src) {
+  return {
+    ...PRINT_OPTS,
+    project: cleanName(sheetMeta.project) || src.meta?.name || 'Warehouse',
+    location: cleanName(sheetMeta.location),
+    drawingTitle: cleanName(sheetMeta.drawingTitle) || 'Warehouse layout plan',
+    drawingNo: cleanName(sheetMeta.drawingNo),
+    drawnBy: cleanName(sheetMeta.drawnBy),
+    checkedBy: cleanName(sheetMeta.checkedBy),
+    approvedBy: cleanName(sheetMeta.approvedBy),
+    date: sheetMeta.date || todayIso(),
+    clearHeightMm: Number(sheetMeta.clearHeightMm) || 0,
+    ceilingHeightMm: Number(sheetMeta.ceilingHeightMm) || 0,
+  };
+}
 
 // What the sheet plots: { kind: 'current' } | { kind: 'cloud', id, name }
 // | { kind: 'file', name, state }.
@@ -2682,13 +2746,13 @@ async function updatePrintSummary() {
   el.textContent = 'Preparing…';
   try {
     const src = await printSourceState();
-    const model = buildSheetModel(src, { ...PRINT_OPTS, project: src.meta?.name });
+    const model = buildSheetModel(src, sheetOptions(src));
     const pages = sheetPlan(model).length;
     if (!document.getElementById('pd_summary')) return; // dialog closed meanwhile
     el.innerHTML =
       `Plotting <b>${esc(sourceLabel())}</b> · scale <b>1:${model.scale.denom}</b>` +
-      ` · <b>${model.paper.name}</b> landscape` +
-      ` · extent <b>${fmt(model.extent.w, 1)} × ${fmt(model.extent.d, 1)} m</b>` +
+      ` · <b>${model.sheet.label}</b>` +
+      ` · extent <b>${fmt(model.extent.w, 2)} × ${fmt(model.extent.d, 2)} m</b>` +
       ` · <b>${pages}</b> page${pages === 1 ? '' : 's'} · labels 1–3 mm`;
   } catch (err) {
     if (el) el.textContent = friendlyError(err);
@@ -2715,41 +2779,69 @@ async function pickPrintFile() {
   inp.click();
 }
 
+function metaField(id, label, value, opts = {}) {
+  const type = opts.type || 'text';
+  const extra = opts.placeholder ? ` placeholder="${esc(opts.placeholder)}"` : '';
+  return `<div class="field"><label>${label}</label>
+    <input type="${type}" id="${id}" value="${esc(value)}"${extra}></div>`;
+}
+
 function renderPrintDialog() {
   const m = printModalEl();
   if (!m) return;
   m.hidden = false;
   m.innerHTML = `
-    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Export PDF">
+    <div class="modal-card pd-card" role="dialog" aria-modal="true" aria-label="Export PDF">
       <div class="modal-head">
         <h2>Export PDF</h2>
         <button class="modal-x" id="pd_close" title="Close (Esc)">×</button>
       </div>
       <div class="modal-body">
-        <div class="hintline">A plotted sheet: the plan with its dimensions, legend, north
-          arrow, scale bar and title block, then measurement schedules on the following
-          pages.</div>
+        <div class="hintline">An architectural sheet: bordered frame, dimension chains on all
+          four sides, title block and title band. Schedules can follow on further sheets.</div>
         <div class="field"><label>Source</label>
           <select id="pd_source">${sourceOptionsHtml()}</select>
           <button class="btn small" id="pd_file" title="Plot a layout from a JSON file">From a file…</button>
         </div>
-        <div class="field"><label>Paper</label>
-          <select id="pd_paper">
-            ${['A3', 'A4', 'A2']
-              .map(
-                (p) =>
-                  `<option value="${p}" ${PRINT_OPTS.paper === p ? 'selected' : ''}>${p} landscape${
-                    p === 'A3' ? ' (recommended)' : ''
-                  }</option>`,
-              )
-              .join('')}
-          </select></div>
+        <div class="rk-cols">
+          <div class="field"><label>Sheet</label>
+            <select id="pd_sheet">
+              ${Object.entries(SHEETS)
+                .map(
+                  ([k, v]) =>
+                    `<option value="${k}" ${PRINT_OPTS.sheet === k ? 'selected' : ''}>${v.label}${
+                      k === 'A3P' ? ' (recommended)' : ''
+                    }</option>`,
+                )
+                .join('')}
+            </select></div>
+          <div class="field"><label>Units</label>
+            <select id="pd_units">
+              <option value="mm" ${PRINT_OPTS.units === 'mm' ? 'selected' : ''}>Dimensions in mm</option>
+              <option value="m" ${PRINT_OPTS.units === 'm' ? 'selected' : ''}>Dimensions in m</option>
+            </select></div>
+        </div>
         <div class="field"><label>Include</label>
           <span class="pd-checks">
             <label><input type="checkbox" id="pd_dims" ${PRINT_OPTS.dimensions ? 'checked' : ''}> Dimensions</label>
             <label><input type="checkbox" id="pd_grid" ${PRINT_OPTS.grid ? 'checked' : ''}> Grid</label>
             <label><input type="checkbox" id="pd_sched" ${PRINT_OPTS.schedules ? 'checked' : ''}> Schedules</label>
           </span></div>
+
+        <div class="rk-sec">Title block</div>
+        <div class="rk-cols">
+          ${metaField('pd_project', 'Project', sheetMeta.project, { placeholder: state.meta?.name || 'Warehouse' })}
+          ${metaField('pd_location', 'Location', sheetMeta.location, { placeholder: 'Site / town' })}
+          ${metaField('pd_title', 'Drawing title', sheetMeta.drawingTitle)}
+          ${metaField('pd_no', 'Drawing no.', sheetMeta.drawingNo, { placeholder: 'WLE-001' })}
+          ${metaField('pd_drawn', 'Drawn by', sheetMeta.drawnBy)}
+          ${metaField('pd_checked', 'Checked by', sheetMeta.checkedBy)}
+          ${metaField('pd_approved', 'Approved by', sheetMeta.approvedBy)}
+          ${metaField('pd_date', 'Date', sheetMeta.date || todayIso(), { type: 'date' })}
+          ${metaField('pd_clear', 'Clear ht (mm)', sheetMeta.clearHeightMm, { type: 'number' })}
+          ${metaField('pd_ceil', 'Ceiling ht (mm)', sheetMeta.ceilingHeightMm, { type: 'number' })}
+        </div>
+
         <div class="modal-summary" id="pd_summary"></div>
       </div>
       <div class="modal-foot">
@@ -2763,11 +2855,20 @@ function renderPrintDialog() {
   updatePrintSummary();
 }
 
+// A wide layout reads far better on a landscape sheet and a narrow one on
+// portrait — which is what a drawing set does with a long, narrow shop.
+function autoSheet(src) {
+  const ext = layoutExtent(src);
+  return ext.d > ext.w ? 'A3P' : 'A3L';
+}
+
 async function openPrintDialog() {
   const m = printModalEl();
   if (!m) return;
   printSource = { kind: 'current' };
   printSourceCache = { key: null, state: null };
+  if (!sheetMeta.sheet) sheetMeta.sheet = autoSheet(state);
+  PRINT_OPTS.sheet = SHEETS[sheetMeta.sheet] ? sheetMeta.sheet : autoSheet(state);
   m.hidden = false;
   m.innerHTML = `<div class="modal-card"><div class="modal-body"><div class="hintline">Preparing…</div></div></div>`;
   // A signed-in account can plot any layout it has saved, so fetch the list first.
@@ -2784,12 +2885,34 @@ async function openPrintDialog() {
 function wirePrintDialog() {
   const q = (id) => document.getElementById(id);
   const readOpts = () => {
-    const paper = q('pd_paper')?.value;
-    PRINT_OPTS.paper = PAPERS[paper] ? paper : 'A3';
+    const sheet = q('pd_sheet')?.value;
+    PRINT_OPTS.sheet = SHEETS[sheet] ? sheet : 'A3P';
+    PRINT_OPTS.units = q('pd_units')?.value === 'm' ? 'm' : 'mm';
     PRINT_OPTS.dimensions = !!q('pd_dims')?.checked;
     PRINT_OPTS.grid = !!q('pd_grid')?.checked;
     PRINT_OPTS.schedules = !!q('pd_sched')?.checked;
+    sheetMeta.sheet = PRINT_OPTS.sheet;
+    sheetMeta.units = PRINT_OPTS.units;
+    saveSheetMeta();
   };
+  const readMeta = () => {
+    const val = (id) => (q(id) ? q(id).value : '');
+    sheetMeta = {
+      ...sheetMeta,
+      project: val('pd_project'),
+      location: val('pd_location'),
+      drawingTitle: val('pd_title'),
+      drawingNo: val('pd_no'),
+      drawnBy: val('pd_drawn'),
+      checkedBy: val('pd_checked'),
+      approvedBy: val('pd_approved'),
+      date: val('pd_date'),
+      clearHeightMm: Number(val('pd_clear')) || 0,
+      ceilingHeightMm: Number(val('pd_ceil')) || 0,
+    };
+    saveSheetMeta();
+  };
+
   q('pd_source').addEventListener('change', (e) => {
     const v = e.target.value;
     if (v.startsWith('cloud:')) {
@@ -2802,7 +2925,7 @@ function wirePrintDialog() {
     updatePrintSummary();
   });
   q('pd_file').onclick = pickPrintFile;
-  ['pd_paper', 'pd_dims', 'pd_grid', 'pd_sched'].forEach((id) => {
+  ['pd_sheet', 'pd_units', 'pd_dims', 'pd_grid', 'pd_sched'].forEach((id) => {
     const el = q(id);
     if (el) {
       el.addEventListener('change', () => {
@@ -2811,10 +2934,33 @@ function wirePrintDialog() {
       });
     }
   });
+  [
+    'pd_project',
+    'pd_location',
+    'pd_title',
+    'pd_no',
+    'pd_drawn',
+    'pd_checked',
+    'pd_approved',
+    'pd_date',
+    'pd_clear',
+    'pd_ceil',
+  ].forEach((id) => {
+    const el = q(id);
+    if (el) {
+      el.addEventListener('input', () => {
+        readMeta();
+        clearTimeout(wirePrintDialog.metaTimer);
+        wirePrintDialog.metaTimer = setTimeout(updatePrintSummary, 250);
+      });
+    }
+  });
   q('pd_close').onclick = closePrintDialog;
   q('pd_cancel').onclick = closePrintDialog;
   q('pd_export').onclick = async () => {
     const btn = q('pd_export');
+    readOpts();
+    readMeta();
     if (btn) btn.disabled = true;
     try {
       await exportPdf();
@@ -2828,8 +2974,8 @@ function wirePrintDialog() {
 
 async function exportPdf() {
   const src = await printSourceState();
-  const model = buildSheetModel(src, { ...PRINT_OPTS, project: src.meta?.name });
-  const doc = createDocument({ title: model.meta.title, subject: model.meta.project });
+  const model = buildSheetModel(src, sheetOptions(src));
+  const doc = createDocument({ title: model.meta.drawingTitle, subject: model.meta.project });
   renderSheet(doc, model);
   const bytes = doc.toBytes();
   const blob = new Blob([bytes], { type: 'application/pdf' });
